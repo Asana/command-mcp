@@ -206,6 +206,13 @@ function story(gid: string, overrides: Partial<Story> = {}): Story {
   };
 }
 
+function requiredCursor(output: { cursor: string | null }): string {
+  if (output.cursor === null) {
+    throw new Error("Expected a pagination cursor");
+  }
+  return output.cursor;
+}
+
 describe("get comments", () => {
   it("filters system stories while counting every raw story scanned", async () => {
     const calls: Array<{ taskGid: string; options: Record<string, unknown> }> = [];
@@ -308,7 +315,7 @@ describe("get comments", () => {
     expect(first.has_more).toBe(true);
 
     const second = await service.getComments(
-      { ticketId: TICKET_GID, limit: 1, cursor: first.cursor ?? undefined },
+      { ticketId: TICKET_GID, limit: 1, cursor: requiredCursor(first) },
       discovered,
       DEADLINE_MS,
     );
@@ -334,7 +341,7 @@ describe("get comments", () => {
 
     await expect(
       service.getComments(
-        { ticketId: TICKET_GID, limit: 2, cursor: first.cursor ?? undefined },
+        { ticketId: TICKET_GID, limit: 2, cursor: requiredCursor(first) },
         discovered,
         DEADLINE_MS,
       ),
@@ -359,7 +366,7 @@ describe("get comments", () => {
 
     await expect(
       service.getComments(
-        { ticketId: OTHER_TICKET_GID, limit: 1, cursor: first.cursor ?? undefined },
+        { ticketId: OTHER_TICKET_GID, limit: 1, cursor: requiredCursor(first) },
         discovered,
         DEADLINE_MS,
       ),

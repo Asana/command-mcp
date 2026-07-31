@@ -5,7 +5,11 @@ import {
   type Story,
   StorySchema,
 } from "../asana_contracts.js";
-import type { AsanaRequestExecutorPort, AsanaRequestTrace } from "../asana_gateway.js";
+import type {
+  AsanaHttpResult,
+  AsanaRequestExecutorPort,
+  AsanaRequestTrace,
+} from "../asana_gateway.js";
 import { CommandError } from "../errors.js";
 import {
   buildMutationResult,
@@ -119,6 +123,13 @@ const commentCursorCodec = createCursorCodec<CommentCursorBinding>({
   invalidMessage: "Comment cursor is invalid for this ticket and limit",
 });
 
+function ensureHttpResult(result: unknown): AsanaHttpResult {
+  if (typeof result === "object" && result !== null && "response" in result && "data" in result) {
+    return result as AsanaHttpResult;
+  }
+  throw new CommandError("asana_api_error", "Unexpected story collection response shape from Asana");
+}
+
 function projectComment(story: Story, trace: AsanaRequestTrace): CommentView {
   const projected = {
     gid: story.gid,
@@ -205,11 +216,13 @@ export function createCommentService(
           StorySchema,
           { deadlineMs },
           async (resources) =>
-            resources.stories.getStoriesForTaskWithHttpInfo(ticket.gid, {
-              limit: pageSize,
-              ...(offset === undefined ? {} : { offset }),
-              opt_fields: COMMENT_STORY_FIELDS,
-            }),
+            ensureHttpResult(
+              await resources.stories.getStoriesForTaskWithHttpInfo(ticket.gid, {
+                limit: pageSize,
+                ...(offset === undefined ? {} : { offset }),
+                opt_fields: COMMENT_STORY_FIELDS,
+              }),
+            ),
           trace,
         );
         return {
