@@ -565,9 +565,27 @@ export async function readReferencedReleaseGids(
   trace: AsanaRequestTrace = executor.createTrace(),
 ): Promise<string[]> {
   const project = await readTeamspaceProject(executor, teamspaceId, options, trace);
+  if (project.custom_fields === undefined) {
+    throw new CommandError("schema_drift", "Asana project response omitted custom fields", {
+      asanaRequestIds: [...trace.requestIds],
+    });
+  }
   const releasesValue = projectCustomFieldValue(project, releasesFieldGid);
-  const references = releasesValue?.reference_value ?? [];
-  return references.map((reference) => reference.gid);
+  if (releasesValue === undefined) {
+    throw new CommandError("schema_drift", "Asana project response omitted the Releases field", {
+      asanaRequestIds: [...trace.requestIds],
+    });
+  }
+  if (releasesValue.reference_value === undefined) {
+    throw new CommandError(
+      "schema_drift",
+      "Asana project response omitted the Releases reference value",
+      {
+        asanaRequestIds: [...trace.requestIds],
+      },
+    );
+  }
+  return releasesValue.reference_value.map((reference) => reference.gid);
 }
 
 export function discoveryToProvenance(discovery: DiscoveryResult): Provenance {
