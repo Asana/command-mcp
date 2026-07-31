@@ -30,7 +30,7 @@ function createThrowingApi<T extends object>(apiName: string): T {
   const target = { apiClient: {} };
   return new Proxy(target, {
     get(object, property, receiver) {
-      if (property === "apiClient") {
+      if (Reflect.has(object, property)) {
         return Reflect.get(object, property, receiver);
       }
       if (property === "then") {
