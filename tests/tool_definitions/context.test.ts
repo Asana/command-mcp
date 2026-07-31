@@ -8,9 +8,12 @@ import type { ContextService } from "../../src/tools/context.js";
 import { createContextService } from "../../src/tools/context.js";
 import {
   buildDiscoverySnapshot,
+  createUnexpectedCommentServiceFake,
   createUnexpectedExecutorFake,
+  createUnexpectedPullRequestServiceFake,
   createUnexpectedReleaseServiceFake,
   createUnexpectedTicketServiceFake,
+  createUnexpectedWorkflowServiceFake,
   DEADLINE_MS,
   TEAMSPACE_ID,
 } from "../helpers/tool_test_helpers.js";
@@ -53,7 +56,10 @@ function createServices(options: {
     context: options.context ?? createUnexpectedContextService(),
     releases: createUnexpectedReleaseServiceFake(),
     schemaDiscovery: options.schemaDiscovery ?? createUnexpectedDiscoveryService(),
+    comments: createUnexpectedCommentServiceFake(),
+    pullRequests: createUnexpectedPullRequestServiceFake(),
     tickets: createUnexpectedTicketServiceFake(),
+    workflow: createUnexpectedWorkflowServiceFake(),
   };
 }
 
@@ -269,7 +275,10 @@ describe("context tool definitions", () => {
       context: createContextService(executor),
       releases: createUnexpectedReleaseServiceFake(),
       schemaDiscovery,
+      comments: createUnexpectedCommentServiceFake(),
+      pullRequests: createUnexpectedPullRequestServiceFake(),
       tickets: createUnexpectedTicketServiceFake(),
+      workflow: createUnexpectedWorkflowServiceFake(),
     };
 
     await expect(

@@ -9,7 +9,10 @@ describe("buildServices", () => {
     expect(services.context).toBeDefined();
     expect(services.releases).toBeDefined();
     expect(services.schemaDiscovery).toBeDefined();
+    expect(services.comments).toBeDefined();
+    expect(services.pullRequests).toBeDefined();
     expect(services.tickets).toBeDefined();
+    expect(services.workflow).toBeDefined();
     expect(typeof services.context.listWorkspaces).toBe("function");
     expect(typeof services.context.findTeamspaces).toBe("function");
     expect(typeof services.context.getContext).toBe("function");
@@ -17,11 +20,16 @@ describe("buildServices", () => {
     expect(typeof services.releases.listReleases).toBe("function");
     expect(typeof services.releases.addTicketToRelease).toBe("function");
     expect(typeof services.releases.removeTicketFromRelease).toBe("function");
+    expect(typeof services.comments.getComments).toBe("function");
+    expect(typeof services.comments.addComment).toBe("function");
+    expect(typeof services.pullRequests.getTicketPrs).toBe("function");
     expect(typeof services.tickets.resolve).toBe("function");
     expect(typeof services.tickets.readByGid).toBe("function");
     expect(typeof services.tickets.readTicket).toBe("function");
     expect(typeof services.tickets.createTicket).toBe("function");
     expect(typeof services.tickets.updateTicket).toBe("function");
+    expect(typeof services.workflow.addDependency).toBe("function");
+    expect(typeof services.workflow.removeDependency).toBe("function");
     expect(typeof services.executor.createTrace).toBe("function");
   });
 });
