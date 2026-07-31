@@ -195,6 +195,7 @@ describe("workflow dependency mutations", () => {
         identifiers.push(identifier);
         expect(options?.trace).toBeDefined();
         if (identifier === "ENG-1") {
+          options?.trace?.requestIds.push("ticket-read");
           return ticket(discovered, TICKET_GID);
         }
         throw new CommandError("out_of_scope", "Ticket is outside the selected Teamspace");
@@ -204,7 +205,10 @@ describe("workflow dependency mutations", () => {
 
     await expect(
       service.addDependency("ENG-1", "OTHER-2", discovered, DEADLINE_MS),
-    ).rejects.toMatchObject({ code: "out_of_scope" });
+    ).rejects.toMatchObject({
+      code: "out_of_scope",
+      asanaRequestIds: ["ticket-read"],
+    });
 
     expect(identifiers).toEqual(["ENG-1", "OTHER-2"]);
     expect(observed.reads).toEqual([]);

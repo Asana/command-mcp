@@ -170,49 +170,58 @@ export function createWorkflowService(
     deadlineMs: number,
   ): Promise<AddDependencyOutput | RemoveDependencyOutput> {
     const trace = executor.createTrace();
-    const ticket = await tickets.resolve(ticketIdentifier, snapshot, deadlineMs, { trace });
-    const dependency = await tickets.resolve(dependencyIdentifier, snapshot, deadlineMs, { trace });
+    try {
+      const ticket = await tickets.resolve(ticketIdentifier, snapshot, deadlineMs, { trace });
+      const dependency = await tickets.resolve(dependencyIdentifier, snapshot, deadlineMs, {
+        trace,
+      });
 
-    const current = await listDependencies(ticket.gid, deadlineMs, trace);
-    const currentlyPresent = current.some((entry) => entry.gid === dependency.gid);
-    const desiredPresent = direction === "add";
-    const variant =
-      direction === "add" ? AddDependencySucceededVariant : RemoveDependencySucceededVariant;
+      const current = await listDependencies(ticket.gid, deadlineMs, trace);
+      const currentlyPresent = current.some((entry) => entry.gid === dependency.gid);
+      const desiredPresent = direction === "add";
+      const variant =
+        direction === "add" ? AddDependencySucceededVariant : RemoveDependencySucceededVariant;
 
-    if (currentlyPresent === desiredPresent) {
+      if (currentlyPresent === desiredPresent) {
+        return buildMutationResult(
+          variant,
+          { ticket_gid: ticket.gid, dependencies: current },
+          trace.requestIds,
+          discoveryToProvenance(snapshot),
+          snapshot.warnings,
+        );
+      }
+
+      const body = { data: { dependencies: [dependency.gid] } };
+      await executor.write(
+        EmptyResponseDataSchema,
+        { deadlineMs },
+        async (resources) =>
+          direction === "add"
+            ? resources.tasks.addDependenciesForTaskWithHttpInfo(body, ticket.gid)
+            : resources.tasks.removeDependenciesForTaskWithHttpInfo(body, ticket.gid),
+        trace,
+      );
+
+      const verified = await listDependencies(ticket.gid, deadlineMs, trace);
+      const verifiedPresent = verified.some((entry) => entry.gid === dependency.gid);
+      if (verifiedPresent !== desiredPresent) {
+        throw verificationError(direction, ticket.gid, dependency.gid, trace);
+      }
+
       return buildMutationResult(
         variant,
-        { ticket_gid: ticket.gid, dependencies: current },
+        { ticket_gid: ticket.gid, dependencies: verified },
         trace.requestIds,
         discoveryToProvenance(snapshot),
         snapshot.warnings,
       );
+    } catch (error) {
+      if (error instanceof CommandError) {
+        throw mergeTrace(error, trace);
+      }
+      throw error;
     }
-
-    const body = { data: { dependencies: [dependency.gid] } };
-    await executor.write(
-      EmptyResponseDataSchema,
-      { deadlineMs },
-      async (resources) =>
-        direction === "add"
-          ? resources.tasks.addDependenciesForTaskWithHttpInfo(body, ticket.gid)
-          : resources.tasks.removeDependenciesForTaskWithHttpInfo(body, ticket.gid),
-      trace,
-    );
-
-    const verified = await listDependencies(ticket.gid, deadlineMs, trace);
-    const verifiedPresent = verified.some((entry) => entry.gid === dependency.gid);
-    if (verifiedPresent !== desiredPresent) {
-      throw verificationError(direction, ticket.gid, dependency.gid, trace);
-    }
-
-    return buildMutationResult(
-      variant,
-      { ticket_gid: ticket.gid, dependencies: verified },
-      trace.requestIds,
-      discoveryToProvenance(snapshot),
-      snapshot.warnings,
-    );
   }
 
   return {
