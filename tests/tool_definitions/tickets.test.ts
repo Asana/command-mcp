@@ -8,7 +8,6 @@ import {
 import type { CallContext, ToolDefinition } from "../../src/tool_registry.js";
 import type { TicketService } from "../../src/tools/tickets.js";
 import {
-  CREATE_PENDING_WARNING,
   CreateTicketOutputSchema,
   ReadTicketOutputSchema,
   UPDATE_PENDING_WARNING,
@@ -217,6 +216,7 @@ describe("ticket tool definitions", () => {
 
     expect(state.discoverCalls).toBe(1);
     expect(CreateTicketOutputSchema.parse(result)).toEqual(result);
+    expect(findTool("create_ticket").protocolOutputSchema.parse(result)).toEqual(result);
   });
 
   it("executes update_ticket and validates its resumable pending variant and warning", async () => {
@@ -258,6 +258,6 @@ describe("ticket tool definitions", () => {
     expect(state.discoverCalls).toBe(1);
     expect(result.warnings).toEqual([UPDATE_PENDING_WARNING]);
     expect(UpdateTicketOutputSchema.parse(result)).toEqual(result);
-    expect(CREATE_PENDING_WARNING).toContain("Do not call create_ticket again");
+    expect(findTool("update_ticket").protocolOutputSchema.parse(result)).toEqual(result);
   });
 });

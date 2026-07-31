@@ -373,7 +373,16 @@ describe("create ticket mutation", () => {
       },
     );
 
-    const mutation = await service.createTicket({ name: "New ticket" }, discovered, 1_000);
+    const mutation = await service.createTicket(
+      {
+        name: "New ticket",
+        description: "Details",
+        assignee: "ada@example.com",
+        due_on: "2026-08-10",
+      },
+      discovered,
+      1_000,
+    );
 
     expect(creates).toBe(1);
     expect(sleeps).toEqual([7, 7, 6]);
@@ -385,7 +394,14 @@ describe("create ticket mutation", () => {
       data: {
         teamspace_id: discovered.teamspace.gid,
         task_gid: TASK_GID,
-        pending_updates: { update_ticket: { name: "New ticket" } },
+        pending_updates: {
+          update_ticket: {
+            name: "New ticket",
+            description: "Details",
+            assignee: "ada@example.com",
+            due_on: "2026-08-10",
+          },
+        },
         retry_with: "update_ticket",
       },
     });
@@ -642,6 +658,54 @@ describe("update ticket mutation", () => {
         },
       },
     ]);
+  });
+
+  it("fails closed when a label value needed for an incremental update is omitted", async () => {
+    const discovered = snapshot();
+    const observed = state();
+    const current = ticket(discovered);
+    const labelsField = current.custom_fields?.find(
+      (field) => field.gid === discovered.labels_field.gid,
+    );
+    if (labelsField === undefined) {
+      throw new Error("Missing Labels fixture");
+    }
+    labelsField.multi_enum_values = undefined;
+    const service = createTicketService(
+      executor(
+        resources({
+          getTask: async () => result(current),
+        }),
+        observed,
+      ),
+    );
+
+    await expect(
+      service.updateTicket(TASK_GID, { labels: { add: ["Urgent"] } }, discovered, DEADLINE_MS),
+    ).rejects.toMatchObject({ code: "schema_drift" });
+    expect(observed.writes).toEqual([]);
+  });
+
+  it("fails closed when a cleared field is omitted from the verification read", async () => {
+    const discovered = snapshot();
+    const observed = state();
+    const reads = [ticket(discovered), ticket(discovered, { assignee: undefined })];
+    const service = createTicketService(
+      executor(
+        resources({
+          getTask: async () => result(reads.shift() ?? unexpectedCall("extra task read")),
+          updateTask: async () => result({ gid: TASK_GID }, "write-request"),
+        }),
+        observed,
+      ),
+    );
+
+    await expect(
+      service.updateTicket(TASK_GID, { assignee: null }, discovered, DEADLINE_MS),
+    ).rejects.toMatchObject({
+      code: "schema_drift",
+      asanaRequestIds: ["write-request"],
+    });
   });
 
   it.each(VERIFICATION_MISMATCH_CASES)(

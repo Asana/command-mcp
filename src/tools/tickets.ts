@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  type CustomField,
   FULL_TASK_FIELDS,
   GidSchema,
   TASK_INITIALIZATION_FIELDS,
@@ -353,7 +354,10 @@ function currentLabelGids(
   if (field === undefined) {
     throw domainError("schema_drift", "Asana task response omitted the Labels field", trace);
   }
-  return (field.multi_enum_values ?? []).map((option) => option.gid);
+  if (field.multi_enum_values === undefined) {
+    throw domainError("schema_drift", "Asana task response omitted the Labels value", trace);
+  }
+  return field.multi_enum_values.map((option) => option.gid);
 }
 
 function sameSet(left: readonly string[], right: readonly string[]): boolean {
@@ -587,6 +591,86 @@ function verificationError(
   });
 }
 
+function requireVerificationCustomField(
+  task: Task,
+  fieldGid: string,
+  fieldName: string,
+  trace: AsanaRequestTrace,
+): CustomField {
+  if (task.custom_fields === undefined) {
+    throw domainError("schema_drift", "Asana task response omitted custom fields", trace);
+  }
+  const field = customField(task, fieldGid);
+  if (field === undefined) {
+    throw domainError("schema_drift", `Asana task response omitted the ${fieldName} field`, trace);
+  }
+  return field;
+}
+
+function requireVerificationFields(
+  task: Task,
+  requested: UpdateTicketFields,
+  snapshot: DiscoveryResult,
+  trace: AsanaRequestTrace,
+): void {
+  if (requested.description !== undefined && task.notes === undefined) {
+    throw domainError("schema_drift", "Asana task response omitted the description", trace);
+  }
+  if (requested.assignee !== undefined && task.assignee === undefined) {
+    throw domainError("schema_drift", "Asana task response omitted the assignee", trace);
+  }
+  if (requested.due_on !== undefined && task.due_on === undefined) {
+    throw domainError("schema_drift", "Asana task response omitted the due date", trace);
+  }
+  if (requested.type !== undefined) {
+    const field = requireVerificationCustomField(
+      task,
+      ticketTypeField(snapshot).gid,
+      "ticket type",
+      trace,
+    );
+    if (field.enum_value === undefined) {
+      throw domainError("schema_drift", "Asana task response omitted the ticket type value", trace);
+    }
+  }
+  if (requested.labels !== undefined) {
+    const field = requireVerificationCustomField(task, snapshot.labels_field.gid, "Labels", trace);
+    if (field.multi_enum_values === undefined) {
+      throw domainError("schema_drift", "Asana task response omitted the Labels value", trace);
+    }
+  }
+  if (requested.predicted_start_on !== undefined) {
+    const field = requireVerificationCustomField(
+      task,
+      snapshot.predicted_start_date_field.gid,
+      "predicted start date",
+      trace,
+    );
+    if (field.date_value === undefined) {
+      throw domainError(
+        "schema_drift",
+        "Asana task response omitted the predicted start date value",
+        trace,
+      );
+    }
+  }
+  if (requested.predicted_completion_on !== undefined) {
+    const field = requireVerificationCustomField(
+      task,
+      snapshot.predicted_completion_date_field.gid,
+      "predicted completion date",
+      trace,
+    );
+    if (field.date_value === undefined) {
+      throw domainError(
+        "schema_drift",
+        "Asana task response omitted the predicted completion date value",
+        trace,
+      );
+    }
+  }
+}
+
 function projectForMutation(
   task: Task,
   snapshot: DiscoveryResult,
@@ -729,6 +813,7 @@ export function createTicketService(
     const reread = await readByGid(task.gid, deadlineMs, trace);
     requireScope(reread, snapshot, trace);
     requireTicketIdentity(reread, snapshot, false, trace);
+    requireVerificationFields(reread, fieldsToVerify, snapshot, trace);
     const view = projectForMutation(reread, snapshot, trace);
     const mismatches = mismatchedFields(fieldsToVerify, view, snapshot);
     if (mismatches.length > 0) {
@@ -825,7 +910,7 @@ export function createTicketService(
 
     const deferred = requestedCreateUpdates(fields);
     const verification = requestedCreateVerification(fields, deferred);
-    const pending = () => pendingInitialization(snapshot, created.gid, deferred);
+    const pending = () => pendingInitialization(snapshot, created.gid, verification);
     const initialized = await pollForInitialization(created.gid, snapshot, deadlineMs, trace);
     if (initialized === null) {
       return buildMutationResult(
