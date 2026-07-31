@@ -6,6 +6,11 @@ import {
   UpdateTicketRuntimeInputSchema,
 } from "../../src/tool_definitions/tickets.js";
 import type { CallContext, ToolDefinition } from "../../src/tool_registry.js";
+import type { PullRequestService } from "../../src/tools/pull_requests.js";
+import {
+  GetTicketPullRequestsOutputSchema,
+  PullRequestResultSchema,
+} from "../../src/tools/pull_requests.js";
 import type { TicketService } from "../../src/tools/tickets.js";
 import {
   CreateTicketOutputSchema,
@@ -77,6 +82,12 @@ describe("ticket tool definitions", () => {
         description: "Read one Command ticket by Asana GID, Command short ID, or Asana task URL.",
       },
       {
+        name: "get_ticket_prs",
+        title: "Get ticket pull requests",
+        description:
+          "Best-effort discovery of GitHub pull-request URLs in ticket attachments and stories.",
+      },
+      {
         name: "create_ticket",
         title: "Create ticket",
         description:
@@ -90,6 +101,13 @@ describe("ticket tool definitions", () => {
     ]);
     expect(findTool("read_ticket").annotations).toEqual({
       title: "Read ticket",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    });
+    expect(findTool("get_ticket_prs").annotations).toEqual({
+      title: "Get ticket pull requests",
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -120,6 +138,31 @@ describe("ticket tool definitions", () => {
     expect(input.shape.ticket_id.description).toContain("Asana task GID");
     expect(input.shape.ticket_id.description).toContain("Command short ID");
     expect(input.shape.ticket_id.description).toContain("Asana task URL");
+  });
+
+  it("declares a strict get_ticket_prs input and the required output descriptions", () => {
+    const input = findTool("get_ticket_prs").inputSchema;
+    if (!(input instanceof z.ZodObject)) {
+      throw new Error("Expected get_ticket_prs to declare an object input");
+    }
+
+    expect(input.shape.ticket_id.description).toBe(
+      "The ticket whose attachments and stories should be scanned for GitHub pull-request URLs",
+    );
+    expect(
+      input.safeParse({
+        teamspace_id: TEAMSPACE_ID,
+        ticket_id: TICKET_GID,
+        extra: true,
+      }).success,
+    ).toBe(false);
+    expect(PullRequestResultSchema.shape.provenance.description).toBe("Where the URL was observed");
+    expect(PullRequestResultSchema.shape.title.description).toBe(
+      "The attachment title when available",
+    );
+    expect(GetTicketPullRequestsOutputSchema.shape.warnings.description).toBe(
+      "Scan-limit warnings the caller must surface",
+    );
   });
 
   it("returns a schema-valid ticket with workspace and Teamspace provenance", async () => {
@@ -154,6 +197,44 @@ describe("ticket tool definitions", () => {
     expect(result.workspace).toEqual(snapshot.workspace);
     expect(result.teamspace).toEqual(snapshot.teamspace);
     expect(ReadTicketOutputSchema.parse(result)).toEqual(result);
+  });
+
+  it("discovers ticket pull requests with one Teamspace schema snapshot", async () => {
+    const state = createDiscoveryState();
+    const snapshot = buildDiscoverySnapshot(TEAMSPACE_ID);
+    state.snapshot = snapshot;
+    const observed: Array<{ identifier: string; deadlineMs: number }> = [];
+    const pullRequests: PullRequestService = {
+      getTicketPrs: async (identifier, discovered, deadlineMs) => {
+        observed.push({ identifier, deadlineMs });
+        expect(discovered).toBe(snapshot);
+        return {
+          workspace: snapshot.workspace,
+          teamspace: snapshot.teamspace,
+          results: [
+            {
+              url: "https://github.com/asana/command-mcp/pull/123",
+              provenance: "attachment",
+              title: "Improve retries",
+            },
+          ],
+          warnings: [],
+        };
+      },
+    };
+    const context: CallContext = {
+      deadlineMs: DEADLINE_MS,
+      services: createTestContainer(state, { pullRequests }),
+    };
+
+    const result = await findTool("get_ticket_prs").execute(
+      { teamspace_id: TEAMSPACE_ID, ticket_id: " ENG-42 " },
+      context,
+    );
+
+    expect(observed).toEqual([{ identifier: "ENG-42", deadlineMs: DEADLINE_MS }]);
+    expect(state.discoverCalls).toBe(1);
+    expect(GetTicketPullRequestsOutputSchema.parse(result)).toEqual(result);
   });
 
   it("keeps update_ticket flat and advertises the unrefined protocol shape", async () => {
