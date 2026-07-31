@@ -261,6 +261,7 @@ describe("ticket listing service", () => {
         DEADLINE_MS,
       );
       expect(result.tickets.map(({ gid }) => gid)).toEqual([matching.gid]);
+      expect(result.tickets[0]?.releases).toEqual([{ gid: RELEASE_GID, name: "August Release" }]);
       expect(result.scanned_count).toBe(7);
       expect(result.truncated).toBe(false);
       expect(result.has_more).toBe(false);
@@ -455,6 +456,10 @@ describe("ticket search service", () => {
     );
 
     expect(result.matches.map(({ gid }) => gid)).toEqual([first.gid, second.gid]);
+    expect(result.matches).toMatchObject([
+      { releases: [{ gid: RELEASE_GID, name: "August Release" }] },
+      { releases: [{ gid: RELEASE_GID, name: "August Release" }] },
+    ]);
     expect(result.truncated).toBe(false);
     expect(calls[0]).toMatchObject({
       text: "request id",
