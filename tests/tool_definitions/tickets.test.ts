@@ -31,6 +31,8 @@ function ticketService(overrides: Partial<TicketService> = {}): TicketService {
     resolve: async () => unexpectedCall("TicketService.resolve"),
     readByGid: async () => unexpectedCall("TicketService.readByGid"),
     readTicket: async () => unexpectedCall("TicketService.readTicket"),
+    createTicket: async () => unexpectedCall("TicketService.createTicket"),
+    updateTicket: async () => unexpectedCall("TicketService.updateTicket"),
     ...overrides,
   };
 }
