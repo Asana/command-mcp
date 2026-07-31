@@ -6,6 +6,7 @@ import type { CommentService } from "../../src/tools/comments.js";
 import type { ContextService } from "../../src/tools/context.js";
 import type { PullRequestService } from "../../src/tools/pull_requests.js";
 import type { ReleaseService } from "../../src/tools/releases.js";
+import type { TicketListingService } from "../../src/tools/ticket_listing.js";
 import type { TicketService } from "../../src/tools/tickets.js";
 import type { WorkflowService } from "../../src/tools/workflow.js";
 
@@ -64,6 +65,13 @@ export function createUnexpectedTicketServiceFake(): TicketService {
     readTicket: async () => unexpectedExecutorCall("TicketService.readTicket"),
     createTicket: async () => unexpectedExecutorCall("TicketService.createTicket"),
     updateTicket: async () => unexpectedExecutorCall("TicketService.updateTicket"),
+  };
+}
+
+export function createUnexpectedTicketListingServiceFake(): TicketListingService {
+  return {
+    listTickets: async () => unexpectedExecutorCall("TicketListingService.listTickets"),
+    searchTickets: async () => unexpectedExecutorCall("TicketListingService.searchTickets"),
   };
 }
 
@@ -144,6 +152,7 @@ export function createTestContainer(
     comments?: CommentService;
     pullRequests?: PullRequestService;
     releases?: ReleaseService;
+    ticketListing?: TicketListingService;
     tickets?: TicketService;
     workflow?: WorkflowService;
   } = {},
@@ -156,6 +165,7 @@ export function createTestContainer(
     comments: overrides.comments ?? createUnexpectedCommentServiceFake(),
     pullRequests: overrides.pullRequests ?? createUnexpectedPullRequestServiceFake(),
     tickets: overrides.tickets ?? createUnexpectedTicketServiceFake(),
+    ticketListing: overrides.ticketListing ?? createUnexpectedTicketListingServiceFake(),
     workflow: overrides.workflow ?? createUnexpectedWorkflowServiceFake(),
   };
 }

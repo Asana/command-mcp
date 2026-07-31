@@ -12,6 +12,7 @@ import {
   createUnexpectedExecutorFake,
   createUnexpectedPullRequestServiceFake,
   createUnexpectedReleaseServiceFake,
+  createUnexpectedTicketListingServiceFake,
   createUnexpectedTicketServiceFake,
   createUnexpectedWorkflowServiceFake,
   DEADLINE_MS,
@@ -59,6 +60,7 @@ function createServices(options: {
     comments: createUnexpectedCommentServiceFake(),
     pullRequests: createUnexpectedPullRequestServiceFake(),
     tickets: createUnexpectedTicketServiceFake(),
+    ticketListing: createUnexpectedTicketListingServiceFake(),
     workflow: createUnexpectedWorkflowServiceFake(),
   };
 }
@@ -278,6 +280,7 @@ describe("context tool definitions", () => {
       comments: createUnexpectedCommentServiceFake(),
       pullRequests: createUnexpectedPullRequestServiceFake(),
       tickets: createUnexpectedTicketServiceFake(),
+      ticketListing: createUnexpectedTicketListingServiceFake(),
       workflow: createUnexpectedWorkflowServiceFake(),
     };
 

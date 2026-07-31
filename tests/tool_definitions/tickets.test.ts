@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  ListTicketsInputSchema,
+  SearchTicketsInputSchema,
   ticketToolDefinitions,
   UpdateTicketProtocolInputSchema,
   UpdateTicketRuntimeInputSchema,
@@ -11,6 +13,11 @@ import {
   GetTicketPullRequestsOutputSchema,
   PullRequestResultSchema,
 } from "../../src/tools/pull_requests.js";
+import type { TicketListingService } from "../../src/tools/ticket_listing.js";
+import {
+  ListTicketsOutputSchema,
+  SearchTicketsOutputSchema,
+} from "../../src/tools/ticket_listing.js";
 import type { TicketService } from "../../src/tools/tickets.js";
 import {
   CreateTicketOutputSchema,
@@ -71,6 +78,14 @@ function ticketService(overrides: Partial<TicketService> = {}): TicketService {
   };
 }
 
+function ticketListingService(overrides: Partial<TicketListingService> = {}): TicketListingService {
+  return {
+    listTickets: async () => unexpectedCall("TicketListingService.listTickets"),
+    searchTickets: async () => unexpectedCall("TicketListingService.searchTickets"),
+    ...overrides,
+  };
+}
+
 describe("ticket tool definitions", () => {
   it("declares the exact read_ticket public contract and annotations", () => {
     expect(
@@ -80,6 +95,18 @@ describe("ticket tool definitions", () => {
         name: "read_ticket",
         title: "Read ticket",
         description: "Read one Command ticket by Asana GID, Command short ID, or Asana task URL.",
+      },
+      {
+        name: "list_tickets",
+        title: "List tickets",
+        description:
+          "Enumerate tickets in the selected Teamspace with bounded type, label, assignee, Release, and completion-status filtering plus opaque pagination. Use search_tickets instead for completion-date or due-date ranges.",
+      },
+      {
+        name: "search_tickets",
+        title: "Search tickets",
+        description:
+          "Search tickets in the selected Teamspace using eventually consistent Asana workspace search, with a total result limit up to 1,000. Use this tool for completion-date or due-date ranges; results include created_at and completed_at. Set compact=true to return only gid, name, and those timestamps.",
       },
       {
         name: "get_ticket_prs",
@@ -106,6 +133,15 @@ describe("ticket tool definitions", () => {
       idempotentHint: true,
       openWorldHint: true,
     });
+    for (const name of ["list_tickets", "search_tickets"]) {
+      expect(findTool(name).annotations).toEqual({
+        title: name === "list_tickets" ? "List tickets" : "Search tickets",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      });
+    }
     expect(findTool("get_ticket_prs").annotations).toEqual({
       title: "Get ticket pull requests",
       readOnlyHint: true,
@@ -127,6 +163,125 @@ describe("ticket tool definitions", () => {
       idempotentHint: true,
       openWorldHint: true,
     });
+  });
+
+  it("advertises deliberately distinct strict list and search inputs", () => {
+    expect(ListTicketsInputSchema.parse({ teamspace_id: TEAMSPACE_ID })).toMatchObject({
+      limit: 50,
+    });
+    expect(SearchTicketsInputSchema.parse({ teamspace_id: TEAMSPACE_ID })).toMatchObject({
+      compact: false,
+      limit: 50,
+    });
+    expect(
+      ListTicketsInputSchema.safeParse({
+        teamspace_id: TEAMSPACE_ID,
+        limit: 101,
+      }).success,
+    ).toBe(false);
+    expect(
+      SearchTicketsInputSchema.safeParse({
+        teamspace_id: TEAMSPACE_ID,
+        limit: 1001,
+      }).success,
+    ).toBe(false);
+    expect(
+      SearchTicketsInputSchema.safeParse({
+        teamspace_id: TEAMSPACE_ID,
+        assignee: "Ada Lovelace",
+      }).success,
+    ).toBe(false);
+    for (const assignee of ["me", "ada@example.com", "1800000000000010"]) {
+      expect(
+        SearchTicketsInputSchema.safeParse({
+          teamspace_id: TEAMSPACE_ID,
+          assignee,
+        }).success,
+      ).toBe(true);
+    }
+
+    const searchInput = findTool("search_tickets").protocolInputSchema;
+    if (!(searchInput instanceof z.ZodObject)) {
+      throw new Error("Expected search_tickets to declare an object input");
+    }
+    for (const absent of ["cursor", "type", "label", "release", "offset"]) {
+      expect(searchInput.shape).not.toHaveProperty(absent);
+    }
+    expect(searchInput.shape).toHaveProperty("due_on.before");
+    expect(searchInput.shape).toHaveProperty("completed_on.after");
+    expect(
+      searchInput.safeParse({
+        teamspace_id: TEAMSPACE_ID,
+        cursor: "not-supported",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("executes list_tickets with one snapshot and validates provenance output", async () => {
+    const state = createDiscoveryState();
+    const snapshot = buildDiscoverySnapshot(TEAMSPACE_ID);
+    state.snapshot = snapshot;
+    const ticketListing = ticketListingService({
+      listTickets: async (input, discovered, deadlineMs) => {
+        expect(input).toEqual({ limit: 50 });
+        expect(discovered).toBe(snapshot);
+        expect(deadlineMs).toBe(DEADLINE_MS);
+        return {
+          workspace: snapshot.workspace,
+          teamspace: snapshot.teamspace,
+          tickets: [],
+          next_cursor: null,
+          has_more: false,
+          scanned_count: 0,
+          truncated: false,
+        };
+      },
+    });
+    const context: CallContext = {
+      deadlineMs: DEADLINE_MS,
+      services: createTestContainer(state, { ticketListing }),
+    };
+
+    const result = await findTool("list_tickets").execute({ teamspace_id: TEAMSPACE_ID }, context);
+    expect(state.discoverCalls).toBe(1);
+    expect(ListTicketsOutputSchema.parse(result)).toEqual(result);
+  });
+
+  it("executes search_tickets with defaults and validates compact output", async () => {
+    const state = createDiscoveryState();
+    const snapshot = buildDiscoverySnapshot(TEAMSPACE_ID);
+    state.snapshot = snapshot;
+    const ticketListing = ticketListingService({
+      searchTickets: async (input, discovered, deadlineMs) => {
+        expect(input).toEqual({ compact: true, limit: 50 });
+        expect(discovered).toBe(snapshot);
+        expect(deadlineMs).toBe(DEADLINE_MS);
+        return {
+          workspace: snapshot.workspace,
+          teamspace: snapshot.teamspace,
+          matches: [
+            {
+              gid: TICKET_GID,
+              name: "Keep request IDs together",
+              created_at: "2026-07-30T12:34:56.789Z",
+              completed_at: null,
+            },
+          ],
+          truncated: false,
+        };
+      },
+    });
+    const context: CallContext = {
+      deadlineMs: DEADLINE_MS,
+      services: createTestContainer(state, { ticketListing }),
+    };
+
+    const result = await findTool("search_tickets").execute(
+      { teamspace_id: TEAMSPACE_ID, compact: true },
+      context,
+    );
+    expect(state.discoverCalls).toBe(1);
+    expect(SearchTicketsOutputSchema.parse(result)).toEqual(result);
   });
 
   it("publishes all three accepted ticket identifier forms in its input schema", () => {

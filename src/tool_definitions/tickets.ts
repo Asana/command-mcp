@@ -2,12 +2,15 @@ import { z } from "zod";
 import { TeamspaceIdentifierSchema } from "../teamspace_identity.js";
 import {
   CreateTicketFieldsSchema,
+  ListTicketFiltersSchema,
+  SearchTicketFiltersSchema,
   TicketIdentifierSchema,
   UpdateTicketFieldsSchema,
   withTicketId,
 } from "../ticket_inputs.js";
 import { defineTeamspaceScopedTool } from "../tool_registry.js";
 import { GetTicketPullRequestsOutputSchema } from "../tools/pull_requests.js";
+import { ListTicketsOutputSchema, SearchTicketsOutputSchema } from "../tools/ticket_listing.js";
 import {
   CreateTicketOutputSchema,
   CreateTicketProtocolOutputSchema,
@@ -29,6 +32,38 @@ const readTicket = defineTeamspaceScopedTool({
   readOnly: true,
   handler: (input, context) =>
     context.services.tickets.readTicket(input.ticket_id, context.schema, context.deadlineMs),
+});
+
+export const ListTicketsInputSchema = ListTicketFiltersSchema.extend({
+  teamspace_id: TeamspaceIdentifierSchema,
+});
+
+const listTickets = defineTeamspaceScopedTool({
+  name: "list_tickets",
+  title: "List tickets",
+  description:
+    "Enumerate tickets in the selected Teamspace with bounded type, label, assignee, Release, and completion-status filtering plus opaque pagination. Use search_tickets instead for completion-date or due-date ranges.",
+  input: ListTicketsInputSchema,
+  output: ListTicketsOutputSchema,
+  readOnly: true,
+  handler: (input, context) =>
+    context.services.ticketListing.listTickets(input, context.schema, context.deadlineMs),
+});
+
+export const SearchTicketsInputSchema = SearchTicketFiltersSchema.extend({
+  teamspace_id: TeamspaceIdentifierSchema,
+});
+
+const searchTickets = defineTeamspaceScopedTool({
+  name: "search_tickets",
+  title: "Search tickets",
+  description:
+    "Search tickets in the selected Teamspace using eventually consistent Asana workspace search, with a total result limit up to 1,000. Use this tool for completion-date or due-date ranges; results include created_at and completed_at. Set compact=true to return only gid, name, and those timestamps.",
+  input: SearchTicketsInputSchema,
+  output: SearchTicketsOutputSchema,
+  readOnly: true,
+  handler: (input, context) =>
+    context.services.ticketListing.searchTickets(input, context.schema, context.deadlineMs),
 });
 
 const GetTicketPullRequestsInputSchema = z
@@ -112,6 +147,8 @@ const updateTicket = defineTeamspaceScopedTool({
 
 export const ticketToolDefinitions = [
   readTicket,
+  listTickets,
+  searchTickets,
   getTicketPullRequests,
   createTicket,
   updateTicket,

@@ -38,6 +38,71 @@ export const AssigneeIdentifierSchema = z
   )
   .describe("A numeric Asana user GID or a valid email address");
 
+export const WorkspaceSearchAssigneeSchema = z
+  .string()
+  .trim()
+  .refine(
+    (value) =>
+      value === "me" ||
+      GidSchema.safeParse(value).success ||
+      z.string().email().safeParse(value).success,
+    'Expected "me", a numeric Asana user GID, or a valid email address',
+  )
+  .describe('The assignee "me", a numeric Asana user GID, or an email address');
+
+export const ListTicketFiltersSchema = z
+  .object({
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .default(50)
+      .describe("Maximum tickets to return, from 1 to 100"),
+    cursor: z
+      .string()
+      .trim()
+      .min(1)
+      .describe("Opaque cursor from a prior call with exactly the same filters and limit")
+      .optional(),
+    completed: z.boolean().describe("Exact ticket completion state").optional(),
+    type: NonEmptyNameSchema.describe("Teamspace-local ticket type name").optional(),
+    label: NonEmptyNameSchema.describe("Teamspace-local label name").optional(),
+    assignee: NonEmptyNameSchema.describe(
+      "Assignee name, email address, or numeric Asana user GID",
+    ).optional(),
+    release: NonEmptyNameSchema.describe("Release project name or numeric GID").optional(),
+  })
+  .strict();
+
+export const SearchTicketFiltersSchema = z
+  .object({
+    text: z
+      .string()
+      .trim()
+      .min(1, "Search text must not be empty")
+      .describe("Distinctive text to search for in ticket names and descriptions")
+      .optional(),
+    assignee: WorkspaceSearchAssigneeSchema.optional(),
+    completed: z.boolean().describe("Exact completion state").optional(),
+    "due_on.before": DateOnlySchema.optional(),
+    "due_on.after": DateOnlySchema.optional(),
+    "completed_on.before": DateOnlySchema.optional(),
+    "completed_on.after": DateOnlySchema.optional(),
+    compact: z
+      .boolean()
+      .default(false)
+      .describe("Return only gid, name, created_at, and completed_at"),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .default(50)
+      .describe("Maximum matches to return, from 1 to 1,000"),
+  })
+  .strict();
+
 const LabelNamesSchema = z.array(
   NonEmptyNameSchema.describe("A Teamspace-local label option name"),
 );
@@ -142,6 +207,9 @@ export function withTicketId<T extends z.ZodRawShape>(shape: T) {
 export type TicketIdentifier = z.infer<typeof TicketIdentifierSchema>;
 export type DateOnly = z.infer<typeof DateOnlySchema>;
 export type AssigneeIdentifier = z.infer<typeof AssigneeIdentifierSchema>;
+export type WorkspaceSearchAssignee = z.infer<typeof WorkspaceSearchAssigneeSchema>;
+export type ListTicketFilters = z.infer<typeof ListTicketFiltersSchema>;
+export type SearchTicketFilters = z.infer<typeof SearchTicketFiltersSchema>;
 export type LabelUpdate = z.infer<typeof LabelUpdateSchema>;
 export type UpdateTicketFields = z.infer<typeof UpdateTicketFieldsSchema>;
 export type CreateTicketFields = z.infer<typeof CreateTicketFieldsSchema>;
