@@ -310,6 +310,8 @@ export const CUSTOM_TYPE_FIELDS = joinOptFields(["gid", "name"]);
 
 export const COMPACT_RESOURCE_FIELDS = joinOptFields(["gid", "name", "resource_type"]);
 
+export const WORKSPACE_FIELDS = joinOptFields(["gid", "name"]);
+
 export const TEAMSPACE_CANDIDATE_FIELDS = joinOptFields(["gid", "name"]);
 
 export type Gid = z.infer<typeof GidSchema>;
