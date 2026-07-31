@@ -9,6 +9,7 @@ import {
   withTicketId,
 } from "../ticket_inputs.js";
 import { defineTeamspaceScopedTool } from "../tool_registry.js";
+import { GetTicketPullRequestsOutputSchema } from "../tools/pull_requests.js";
 import { ListTicketsOutputSchema, SearchTicketsOutputSchema } from "../tools/ticket_listing.js";
 import {
   CreateTicketOutputSchema,
@@ -63,6 +64,27 @@ const searchTickets = defineTeamspaceScopedTool({
   readOnly: true,
   handler: (input, context) =>
     context.services.ticketListing.searchTickets(input, context.schema, context.deadlineMs),
+});
+
+const GetTicketPullRequestsInputSchema = z
+  .object({
+    teamspace_id: TeamspaceIdentifierSchema,
+    ticket_id: TicketIdentifierSchema.describe(
+      "The ticket whose attachments and stories should be scanned for GitHub pull-request URLs",
+    ),
+  })
+  .strict();
+
+const getTicketPullRequests = defineTeamspaceScopedTool({
+  name: "get_ticket_prs",
+  title: "Get ticket pull requests",
+  description:
+    "Best-effort discovery of GitHub pull-request URLs in ticket attachments and stories.",
+  input: GetTicketPullRequestsInputSchema,
+  output: GetTicketPullRequestsOutputSchema,
+  readOnly: true,
+  handler: (input, context) =>
+    context.services.pullRequests.getTicketPrs(input.ticket_id, context.schema, context.deadlineMs),
 });
 
 const CreateTicketInputSchema = CreateTicketFieldsSchema.extend({
@@ -127,6 +149,7 @@ export const ticketToolDefinitions = [
   readTicket,
   listTickets,
   searchTickets,
+  getTicketPullRequests,
   createTicket,
   updateTicket,
 ] as const;

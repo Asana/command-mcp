@@ -617,4 +617,30 @@ describe("readReferencedReleaseGids", () => {
     expect(updated).toEqual([release.gid, "1700000000000003"]);
     expect(state.projectReads).toBeGreaterThan(1);
   });
+
+  it("fails closed when the Releases reference value is omitted", async () => {
+    const releasesFieldGid = "1200000000000003";
+    const state = completeTeamspaceState({
+      projectCustomFields: [
+        {
+          gid: releasesFieldGid,
+          name: "Releases",
+          resource_subtype: "reference",
+          type: "reference",
+        },
+      ],
+    });
+
+    await expect(
+      readReferencedReleaseGids(
+        createFakeExecutor(state),
+        TEAMSPACE_ID,
+        releasesFieldGid,
+        requestOptions,
+      ),
+    ).rejects.toMatchObject({
+      code: "schema_drift",
+      message: "Asana project response omitted the Releases reference value",
+    });
+  });
 });
