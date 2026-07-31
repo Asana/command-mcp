@@ -33,7 +33,7 @@ describe("createScanBudget", () => {
     const budget = createScanBudget(5);
     const loadPage = async (
       _pageSize: number,
-      offset: string | number | undefined,
+      offset: string | undefined,
     ): Promise<PageLoadResult<number>> => {
       if (offset === undefined) {
         return { items: [1, 2, 3], nextOffset: "second" };
@@ -111,7 +111,7 @@ describe("scanPages", () => {
         if (offset === undefined) {
           return {
             items: Array.from({ length: 15 }, (_, index) => index),
-            nextOffset: 1,
+            nextOffset: "page-2",
           };
         }
         return { items: Array.from({ length: pageSize }, (_, index) => index + 100) };
@@ -170,7 +170,7 @@ describe("scanPages", () => {
   });
 
   it("resumes from a supplied starting offset", async () => {
-    const seenOffsets: Array<string | number | undefined> = [];
+    const seenOffsets: Array<string | undefined> = [];
     await scanPages({
       startOffset: "resume-here",
       limit: 1,

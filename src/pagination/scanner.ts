@@ -5,12 +5,12 @@ export const MAX_PAGE_REQUESTS = 200;
 
 export type PageLoadResult<T> = {
   items: T[];
-  nextOffset?: string | number;
+  nextOffset?: string;
 };
 
 export type PageLoader<T> = (
   pageSize: number,
-  offset: string | number | undefined,
+  offset: string | undefined,
 ) => Promise<PageLoadResult<T>>;
 
 export type ScanBudget = {
@@ -44,7 +44,7 @@ export function createScanBudget(maximum: number): ScanBudget {
 }
 
 export type ScanPagesOptions<T, R> = {
-  startOffset?: string | number;
+  startOffset?: string;
   limit: number;
   budget: ScanBudget;
   loadPage: PageLoader<T>;
@@ -54,7 +54,7 @@ export type ScanPagesOptions<T, R> = {
 
 export type ScanPagesResult<R> = {
   results: R[];
-  nextOffset?: string | number;
+  nextOffset?: string;
   hasMore: boolean;
   examined: number;
   truncated: boolean;
@@ -73,10 +73,10 @@ export async function scanPages<T, R>(
   } = options;
 
   const results: R[] = [];
-  let offset: string | number | undefined = startOffset;
+  let offset: string | undefined = startOffset;
   let examined = 0;
   let pageRequests = 0;
-  let lastPageNextOffset: string | number | undefined;
+  let lastPageNextOffset: string | undefined;
   let stoppedBySafetyBound = false;
 
   while (results.length < limit && !budget.exhausted) {
@@ -87,21 +87,14 @@ export async function scanPages<T, R>(
 
     const resultsNeeded = limit - results.length;
     const pageSize = Math.min(API_PAGE_MAX, resultsNeeded, budget.remaining);
-    if (pageSize <= 0) {
-      stoppedBySafetyBound = true;
-      break;
-    }
 
     pageRequests += 1;
     const page = await loadPage(pageSize, offset);
     lastPageNextOffset = page.nextOffset;
 
-    const itemsToExamine = page.items.slice(0, budget.remaining);
+    const itemsToExamine = page.items.slice(0, Math.min(pageSize, budget.remaining));
     for (const item of itemsToExamine) {
-      if (!budget.consume()) {
-        stoppedBySafetyBound = true;
-        break;
-      }
+      budget.consume();
       examined += 1;
       const result = visit(item);
       if (result !== undefined) {
@@ -150,7 +143,7 @@ export type CollectPagesOptions<T> = {
 export async function collectPages<T>(options: CollectPagesOptions<T>): Promise<T[]> {
   const { loadPage, maxPageRequests = MAX_PAGE_REQUESTS } = options;
   const collected: T[] = [];
-  let offset: string | number | undefined;
+  let offset: string | undefined;
   let pageRequests = 0;
 
   while (true) {

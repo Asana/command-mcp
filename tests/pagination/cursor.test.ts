@@ -10,12 +10,7 @@ type ListBinding = {
 function createTestCodec(version: string | number = 1) {
   return createCursorCodec<ListBinding>({
     version,
-    canonicalizeBinding: (binding) => ({
-      filters: Object.fromEntries(
-        Object.entries(binding.filters).sort(([left], [right]) => left.localeCompare(right)),
-      ),
-      limit: binding.limit,
-    }),
+    canonicalizeBinding: (binding) => binding,
     invalidMessage: "The pagination cursor is invalid. Restart without a cursor.",
   });
 }
@@ -25,6 +20,23 @@ describe("createCursorCodec", () => {
     filters: { status: "open", team: "core" },
     limit: 25,
   };
+
+  it("produces the same cursor for bindings with the same content in different key order", () => {
+    const codec = createTestCodec();
+    const cursorA = codec.encode("offset-1", {
+      filters: { completed: "false", type: "Bug" },
+      limit: 25,
+    });
+    const cursorB = codec.encode("offset-1", {
+      filters: { type: "Bug", completed: "false" },
+      limit: 25,
+    });
+
+    expect(cursorA).toBe(cursorB);
+    expect(
+      codec.decode(cursorA, { filters: { type: "Bug", completed: "false" }, limit: 25 }).offset,
+    ).toBe("offset-1");
+  });
 
   it("round-trips the offset under the same binding", () => {
     const codec = createTestCodec();
@@ -83,11 +95,11 @@ describe("createCursorCodec", () => {
 
   it("decodes an envelope containing only version, offset, and fingerprint", () => {
     const codec = createTestCodec();
-    const decoded = codec.decode(codec.encode(99, binding), binding);
+    const decoded = codec.decode(codec.encode("offset-99", binding), binding);
 
     expect(decoded).toEqual({
       version: 1,
-      offset: 99,
+      offset: "offset-99",
       fingerprint: decoded.fingerprint,
     });
     expect(Object.keys(decoded).sort()).toEqual(["fingerprint", "offset", "version"]);

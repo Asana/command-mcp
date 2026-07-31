@@ -5,7 +5,7 @@ import { CommandError } from "../errors.js";
 const CursorEnvelopeSchema = z
   .object({
     version: z.union([z.string(), z.number()]),
-    offset: z.union([z.string(), z.number()]),
+    offset: z.string(),
     fingerprint: z.string(),
   })
   .strict();
@@ -13,7 +13,7 @@ const CursorEnvelopeSchema = z
 export type CursorEnvelope = z.infer<typeof CursorEnvelopeSchema>;
 
 export type CursorCodec<B> = {
-  encode(offset: string | number, binding: B): string;
+  encode(offset: string, binding: B): string;
   decode(cursor: string, binding: B): CursorEnvelope;
 };
 
@@ -23,8 +23,23 @@ export type CreateCursorCodecOptions<B> = {
   invalidMessage: string;
 };
 
+function canonicalizeJsonValue(value: unknown): unknown {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(canonicalizeJsonValue);
+  }
+  const record = value as Record<string, unknown>;
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(record).sort()) {
+    sorted[key] = canonicalizeJsonValue(record[key]);
+  }
+  return sorted;
+}
+
 function fingerprintBinding(canonicalizedBinding: unknown): string {
-  const canonicalJson = JSON.stringify(canonicalizedBinding);
+  const canonicalJson = JSON.stringify(canonicalizeJsonValue(canonicalizedBinding));
   return createHash("sha256").update(canonicalJson).digest("base64url").slice(0, 24);
 }
 
@@ -48,12 +63,7 @@ export function createCursorCodec<B>(options: CreateCursorCodecOptions<B>): Curs
       return Buffer.from(JSON.stringify(envelope)).toString("base64url");
     },
     decode(cursor, binding) {
-      let decodedJson: string;
-      try {
-        decodedJson = Buffer.from(cursor, "base64url").toString("utf8");
-      } catch (error) {
-        cursorInvalid(invalidMessage, error);
-      }
+      const decodedJson = Buffer.from(cursor, "base64url").toString("utf8");
 
       let parsedJson: unknown;
       try {
