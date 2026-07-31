@@ -208,9 +208,14 @@ function upstreamMessage(error: unknown, accessToken: string): string | undefine
     return undefined;
   }
 
-  const responseBody = (error as { response?: { body?: unknown } }).response?.body;
-  if (typeof responseBody === "object" && responseBody !== null) {
-    const errors = (responseBody as { errors?: Array<{ message?: string }> }).errors;
+  const response = (error as { response?: { body?: unknown; text?: string } }).response;
+  if (response === undefined) {
+    return undefined;
+  }
+
+  const body = response.body;
+  if (typeof body === "object" && body !== null) {
+    const errors = (body as { errors?: Array<{ message?: string }> }).errors;
     if (Array.isArray(errors)) {
       const messages = errors
         .map((entry) => entry.message)
@@ -219,16 +224,10 @@ function upstreamMessage(error: unknown, accessToken: string): string | undefine
         return sanitizeUpstreamMessage(messages.join("; "), accessToken);
       }
     }
-
-    const message = (responseBody as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) {
-      return sanitizeUpstreamMessage(message, accessToken);
-    }
   }
 
-  const message = (error as { message?: string }).message;
-  if (typeof message === "string" && message.length > 0) {
-    return sanitizeUpstreamMessage(message, accessToken);
+  if (typeof response.text === "string" && response.text.length > 0) {
+    return sanitizeUpstreamMessage(response.text, accessToken);
   }
 
   return undefined;
@@ -242,7 +241,7 @@ function refersToOptInHeader(message: string | undefined): boolean {
   return OPT_IN_HEADER_MESSAGE_MARKERS.some((marker) => normalized.includes(marker));
 }
 
-function retryAfterSeconds(error: unknown): number | undefined {
+function retryAfterSeconds(error: unknown, nowMs: number): number | undefined {
   if (typeof error !== "object" || error === null) {
     return undefined;
   }
@@ -269,17 +268,38 @@ function retryAfterSeconds(error: unknown): number | undefined {
     return undefined;
   }
 
-  const seconds = Math.ceil((retryAt - Date.now()) / 1000);
+  const seconds = Math.ceil((retryAt - nowMs) / 1000);
   return seconds >= 0 ? seconds : undefined;
+}
+
+function mergeCommandErrorRequestIds(error: CommandError, trace: AsanaRequestTrace): CommandError {
+  const mergedIds = [...error.asanaRequestIds];
+  for (const requestId of trace.requestIds) {
+    if (!mergedIds.includes(requestId)) {
+      mergedIds.push(requestId);
+    }
+  }
+  if (
+    mergedIds.length === error.asanaRequestIds.length &&
+    mergedIds.every((requestId, index) => requestId === error.asanaRequestIds[index])
+  ) {
+    return error;
+  }
+  return new CommandError(error.code, error.message, {
+    ...(error.details === undefined ? {} : { details: error.details }),
+    asanaRequestIds: mergedIds,
+    cause: error.cause,
+  });
 }
 
 function normalizeUpstreamError(
   error: unknown,
   accessToken: string,
   trace: AsanaRequestTrace,
+  nowMs: number,
 ): CommandError {
   if (error instanceof CommandError) {
-    return error;
+    return mergeCommandErrorRequestIds(error, trace);
   }
 
   if (typeof error === "object" && error !== null) {
@@ -300,18 +320,7 @@ function normalizeUpstreamError(
     typeof error === "object" && error !== null ? (error as { status?: number }).status : undefined;
   const message = upstreamMessage(error, accessToken);
 
-  if (refersToOptInHeader(message)) {
-    return new CommandError(
-      "required_api_change_unavailable",
-      "Asana requires an API opt-in header that is not enabled",
-      {
-        asanaRequestIds: [...trace.requestIds],
-        cause: error,
-      },
-    );
-  }
-
-  const retryAfter = status === 429 ? retryAfterSeconds(error) : undefined;
+  const retryAfter = status === 429 ? retryAfterSeconds(error, nowMs) : undefined;
   const rateLimitDetails =
     retryAfter === undefined ? undefined : { retry_after_seconds: retryAfter };
 
@@ -351,6 +360,17 @@ function normalizeUpstreamError(
         cause: error,
       });
     default: {
+      if (refersToOptInHeader(message)) {
+        return new CommandError(
+          "required_api_change_unavailable",
+          "Asana requires an API opt-in header that is not enabled",
+          {
+            asanaRequestIds: [...trace.requestIds],
+            cause: error,
+          },
+        );
+      }
+
       const apiErrorOptions: {
         details?: Record<string, unknown>;
         asanaRequestIds: string[];
@@ -374,7 +394,7 @@ function normalizeUpstreamError(
   }
 }
 
-function decodeSchemaDrift(error: z.ZodError): CommandError {
+function decodeSchemaDrift(error: z.ZodError, trace: AsanaRequestTrace): CommandError {
   return new CommandError("schema_drift", "Asana response did not match the expected schema", {
     details: {
       issues: error.issues.map((issue) => ({
@@ -382,6 +402,7 @@ function decodeSchemaDrift(error: z.ZodError): CommandError {
         code: issue.code,
       })),
     },
+    asanaRequestIds: [...trace.requestIds],
     cause: error,
   });
 }
@@ -425,7 +446,7 @@ export class AsanaRequestExecutor {
         throw error;
       }
       if (error && typeof error === "object" && "issues" in error) {
-        throw decodeSchemaDrift(error as z.ZodError);
+        throw decodeSchemaDrift(error as z.ZodError, trace);
       }
       throw error;
     }
@@ -447,7 +468,7 @@ export class AsanaRequestExecutor {
         throw error;
       }
       if (error && typeof error === "object" && "issues" in error) {
-        throw decodeSchemaDrift(error as z.ZodError);
+        throw decodeSchemaDrift(error as z.ZodError, trace);
       }
       throw error;
     }
@@ -472,7 +493,7 @@ export class AsanaRequestExecutor {
         throw error;
       }
       if (error && typeof error === "object" && "issues" in error) {
-        throw decodeSchemaDrift(error as z.ZodError);
+        throw decodeSchemaDrift(error as z.ZodError, trace);
       }
       throw error;
     }
@@ -490,16 +511,16 @@ export class AsanaRequestExecutor {
         return await this.invokeRequest(options, trace, callback);
       } catch (error) {
         if (attempt >= this.maxRetryAttempts) {
-          throw normalizeUpstreamError(error, this.config.accessToken, trace);
+          throw normalizeUpstreamError(error, this.config.accessToken, trace, this.clock());
         }
 
         const status =
           typeof error === "object" && error !== null
             ? (error as { status?: number }).status
             : undefined;
-        const retryAfter = status === 429 ? retryAfterSeconds(error) : undefined;
+        const retryAfter = status === 429 ? retryAfterSeconds(error, this.clock()) : undefined;
         if (retryAfter === undefined || retryAfter > MAX_RETRY_AFTER_SECONDS) {
-          throw normalizeUpstreamError(error, this.config.accessToken, trace);
+          throw normalizeUpstreamError(error, this.config.accessToken, trace, this.clock());
         }
 
         const delayMs = retryAfter * 1000 + Math.floor(this.random() * RETRY_JITTER_MS);
@@ -527,7 +548,7 @@ export class AsanaRequestExecutor {
     try {
       return await this.invokeRequest(options, trace, callback);
     } catch (error) {
-      throw normalizeUpstreamError(error, this.config.accessToken, trace);
+      throw normalizeUpstreamError(error, this.config.accessToken, trace, this.clock());
     }
   }
 

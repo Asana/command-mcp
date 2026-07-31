@@ -1,4 +1,14 @@
-import type { ApiClient } from "asana";
+import type {
+  ApiClient,
+  AttachmentsApi,
+  CustomFieldSettingsApi,
+  CustomTypesApi,
+  ProjectsApi,
+  StoriesApi,
+  TasksApi,
+  TypeaheadApi,
+  WorkspacesApi,
+} from "asana";
 import { ApiClient as AsanaApiClient } from "asana";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -79,16 +89,31 @@ function unusedMethod(name: string): never {
   throw new Error(`Unexpected call to ${name}`);
 }
 
+function createThrowingApi<T extends object>(apiName: string): T {
+  const target = { apiClient: {} };
+  return new Proxy(target, {
+    get(object, property, receiver) {
+      if (property === "apiClient") {
+        return Reflect.get(object, property, receiver);
+      }
+      if (property === "then") {
+        return undefined;
+      }
+      return (..._args: unknown[]) => unusedMethod(`${apiName}.${String(property)}`);
+    },
+  }) as T;
+}
+
 function createResourceBundle(): AsanaResourceBundle {
   return {
-    tasks: { apiClient: {} } as never,
-    projects: { apiClient: {} } as never,
-    stories: { apiClient: {} } as never,
-    attachments: { apiClient: {} } as never,
-    customFieldSettings: { apiClient: {} } as never,
-    customTypes: { apiClient: {} } as never,
-    typeahead: { apiClient: {} } as never,
-    workspaces: { apiClient: {} } as never,
+    tasks: createThrowingApi<TasksApi>("tasks"),
+    projects: createThrowingApi<ProjectsApi>("projects"),
+    stories: createThrowingApi<StoriesApi>("stories"),
+    attachments: createThrowingApi<AttachmentsApi>("attachments"),
+    customFieldSettings: createThrowingApi<CustomFieldSettingsApi>("customFieldSettings"),
+    customTypes: createThrowingApi<CustomTypesApi>("customTypes"),
+    typeahead: createThrowingApi<TypeaheadApi>("typeahead"),
+    workspaces: createThrowingApi<WorkspacesApi>("workspaces"),
   };
 }
 
@@ -97,17 +122,18 @@ function superagentError(options: {
   message?: string;
   headers?: Record<string, string>;
   body?: unknown;
+  text?: string;
   code?: string;
   timeout?: boolean;
 }): Error & {
   status?: number;
-  response?: { headers?: Record<string, string>; body?: unknown };
+  response?: { headers?: Record<string, string>; body?: unknown; text?: string };
   code?: string;
   timeout?: boolean;
 } {
   const error = new Error(options.message ?? "upstream failure") as Error & {
     status?: number;
-    response?: { headers?: Record<string, string>; body?: unknown };
+    response?: { headers?: Record<string, string>; body?: unknown; text?: string };
     code?: string;
     timeout?: boolean;
   };
@@ -120,13 +146,16 @@ function superagentError(options: {
   if (options.timeout !== undefined) {
     error.timeout = options.timeout;
   }
-  if (options.headers !== undefined || options.body !== undefined) {
+  if (options.headers !== undefined || options.body !== undefined || options.text !== undefined) {
     error.response = {};
     if (options.headers !== undefined) {
       error.response.headers = options.headers;
     }
     if (options.body !== undefined) {
       error.response.body = options.body;
+    }
+    if (options.text !== undefined) {
+      error.response.text = options.text;
     }
   }
   return error;
@@ -188,7 +217,7 @@ describe("AsanaRequestExecutor", () => {
     expect(capturedHeaders?.["Asana-Enable"]).toBe(INCLUDE_ASANA_CREATED_CUSTOM_TYPES);
   });
 
-  it("retries a rate-limited read when Retry-After is acceptable and stops at the attempt limit", async () => {
+  it("retries a rate-limited read twice after the initial failure (3 total attempts) when Retry-After is acceptable and stops at the attempt limit", async () => {
     const sleep = vi.fn(async () => {});
     const callback = vi
       .fn()
@@ -344,6 +373,76 @@ describe("AsanaRequestExecutor", () => {
     });
   });
 
+  it("maps HTTP 401 to authentication_failed even when the body mentions the opt-in header", async () => {
+    const executor = new AsanaRequestExecutor(testConfig(), testExecutorOptions());
+
+    await expect(
+      executor.read(GidResourceSchema, { deadlineMs: deadlineAfter(10_000) }, async () => {
+        throw superagentError({
+          status: 401,
+          body: {
+            errors: [{ message: "Missing Asana-Enable: include_asana_created_custom_types" }],
+          },
+        });
+      }),
+    ).rejects.toMatchObject({
+      code: "authentication_failed",
+    });
+  });
+
+  it("does not surface transport error messages that only appear on the thrown error", async () => {
+    const executor = new AsanaRequestExecutor(testConfig(), testExecutorOptions());
+    const secretUrl = `https://app.asana.com/api/1.0/tasks?access_token=${ACCESS_TOKEN}`;
+
+    await expect(
+      executor.read(GidResourceSchema, { deadlineMs: deadlineAfter(10_000) }, async () => {
+        throw superagentError({
+          status: 500,
+          message: `connect failed for ${secretUrl}`,
+        });
+      }),
+    ).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(CommandError);
+      const commandError = error as CommandError;
+      expect(commandError.message).toBe("Asana API error (500)");
+      expect(commandError.message).not.toContain(ACCESS_TOKEN);
+      expect(commandError.message).not.toContain(secretUrl);
+      return true;
+    });
+  });
+
+  it("parses HTTP-date Retry-After values using the injected clock", async () => {
+    const sleep = vi.fn(async () => {});
+    const callback = vi
+      .fn()
+      .mockRejectedValueOnce(
+        superagentError({
+          status: 429,
+          headers: { "retry-after": "Wed, 21 Oct 2015 07:28:00 GMT" },
+          body: { errors: [{ message: "Rate limited" }] },
+        }),
+      )
+      .mockResolvedValueOnce({
+        response: { headers: {} },
+        data: { data: { gid: "9" } },
+      });
+    const retryAtMs = Date.parse("Wed, 21 Oct 2015 07:28:00 GMT");
+    const nowMs = retryAtMs - 2_000;
+
+    const executor = new AsanaRequestExecutor(
+      testConfig(),
+      testExecutorOptions({
+        clock: () => nowMs,
+        sleep,
+        random: () => 0,
+      }),
+    );
+
+    await executor.read(GidResourceSchema, { deadlineMs: nowMs + 10_000 }, callback);
+    expect(callback).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
   it("maps opt-in header failures to required_api_change_unavailable", async () => {
     const executor = new AsanaRequestExecutor(testConfig(), testExecutorOptions());
 
@@ -373,7 +472,7 @@ describe("AsanaRequestExecutor", () => {
     });
   });
 
-  it("throws schema_drift with issue paths and without raw values on decode failure", async () => {
+  it("throws schema_drift with issue paths, collected request IDs, and without raw values on decode failure", async () => {
     const executor = new AsanaRequestExecutor(testConfig(), testExecutorOptions());
 
     const secretValue = "super-secret-ticket-content";
@@ -382,7 +481,7 @@ describe("AsanaRequestExecutor", () => {
         z.object({ gid: GidSchema, name: z.string() }),
         { deadlineMs: deadlineAfter(10_000) },
         async () => ({
-          response: { headers: {} },
+          response: { headers: { "x-asana-request-id": "req-drift" } },
           data: { data: { gid: "4", name: 123, secret: secretValue } },
         }),
       ),
@@ -390,6 +489,7 @@ describe("AsanaRequestExecutor", () => {
       expect(error).toBeInstanceOf(CommandError);
       const commandError = error as CommandError;
       expect(commandError.code).toBe("schema_drift");
+      expect(commandError.asanaRequestIds).toEqual(["req-drift"]);
       expect(commandError.details?.issues).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
