@@ -2,6 +2,7 @@ import type { AsanaRequestExecutorPort } from "../../src/asana_gateway.js";
 import type { Config } from "../../src/config.js";
 import type { DiscoveryResult } from "../../src/schema_discovery.js";
 import type { CommandServices } from "../../src/services.js";
+import type { CommentService } from "../../src/tools/comments.js";
 import type { ContextService } from "../../src/tools/context.js";
 import type { TicketService } from "../../src/tools/tickets.js";
 import type { WorkflowService } from "../../src/tools/workflow.js";
@@ -44,6 +45,13 @@ export function createUnexpectedContextServiceFake(): ContextService {
     listWorkspaces: async () => unexpectedExecutorCall("ContextService.listWorkspaces"),
     findTeamspaces: async () => unexpectedExecutorCall("ContextService.findTeamspaces"),
     getContext: () => unexpectedExecutorCall("ContextService.getContext"),
+  };
+}
+
+export function createUnexpectedCommentServiceFake(): CommentService {
+  return {
+    getComments: async () => unexpectedExecutorCall("CommentService.getComments"),
+    addComment: async () => unexpectedExecutorCall("CommentService.addComment"),
   };
 }
 
@@ -115,12 +123,17 @@ export function createFakeSchemaDiscoveryService(state: FakeSchemaDiscoveryState
 
 export function createTestContainer(
   state: FakeSchemaDiscoveryState,
-  overrides: { tickets?: TicketService; workflow?: WorkflowService } = {},
+  overrides: {
+    comments?: CommentService;
+    tickets?: TicketService;
+    workflow?: WorkflowService;
+  } = {},
 ): CommandServices {
   return {
     executor: createUnexpectedExecutorFake(),
     context: createUnexpectedContextServiceFake(),
     schemaDiscovery: createFakeSchemaDiscoveryService(state),
+    comments: overrides.comments ?? createUnexpectedCommentServiceFake(),
     tickets: overrides.tickets ?? createUnexpectedTicketServiceFake(),
     workflow: overrides.workflow ?? createUnexpectedWorkflowServiceFake(),
   };

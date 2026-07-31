@@ -8,6 +8,7 @@ import type { ContextService } from "../../src/tools/context.js";
 import { createContextService } from "../../src/tools/context.js";
 import {
   buildDiscoverySnapshot,
+  createUnexpectedCommentServiceFake,
   createUnexpectedExecutorFake,
   createUnexpectedTicketServiceFake,
   createUnexpectedWorkflowServiceFake,
@@ -52,6 +53,7 @@ function createServices(options: {
     executor: createUnexpectedExecutorFake(),
     context: options.context ?? createUnexpectedContextService(),
     schemaDiscovery: options.schemaDiscovery ?? createUnexpectedDiscoveryService(),
+    comments: createUnexpectedCommentServiceFake(),
     tickets: createUnexpectedTicketServiceFake(),
     workflow: createUnexpectedWorkflowServiceFake(),
   };
@@ -268,6 +270,7 @@ describe("context tool definitions", () => {
       executor,
       context: createContextService(executor),
       schemaDiscovery,
+      comments: createUnexpectedCommentServiceFake(),
       tickets: createUnexpectedTicketServiceFake(),
       workflow: createUnexpectedWorkflowServiceFake(),
     };

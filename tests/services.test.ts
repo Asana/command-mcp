@@ -8,12 +8,15 @@ describe("buildServices", () => {
     expect(services.executor).toBeDefined();
     expect(services.context).toBeDefined();
     expect(services.schemaDiscovery).toBeDefined();
+    expect(services.comments).toBeDefined();
     expect(services.tickets).toBeDefined();
     expect(services.workflow).toBeDefined();
     expect(typeof services.context.listWorkspaces).toBe("function");
     expect(typeof services.context.findTeamspaces).toBe("function");
     expect(typeof services.context.getContext).toBe("function");
     expect(typeof services.schemaDiscovery.discover).toBe("function");
+    expect(typeof services.comments.getComments).toBe("function");
+    expect(typeof services.comments.addComment).toBe("function");
     expect(typeof services.tickets.resolve).toBe("function");
     expect(typeof services.tickets.readByGid).toBe("function");
     expect(typeof services.tickets.readTicket).toBe("function");
