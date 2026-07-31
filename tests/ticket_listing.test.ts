@@ -458,9 +458,9 @@ describe("ticket search service", () => {
     );
 
     expect(result.matches.map(({ gid }) => gid)).toEqual([first.gid, second.gid]);
-    expect(result.matches.map((match) => match.releases)).toEqual([
-      [{ gid: RELEASE_GID, name: "August Release" }],
-      [{ gid: RELEASE_GID, name: "August Release" }],
+    expect(result.matches).toMatchObject([
+      { releases: [{ gid: RELEASE_GID, name: "August Release" }] },
+      { releases: [{ gid: RELEASE_GID, name: "August Release" }] },
     ]);
     expect(result.truncated).toBe(false);
     expect(calls[0]).toMatchObject({
