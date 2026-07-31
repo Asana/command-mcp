@@ -10,15 +10,16 @@ import type { AsanaRequestExecutorPort, AsanaRequestTrace } from "../asana_gatew
 import { tryParseAsanaAppUrl } from "../asana_url.js";
 import { CommandError } from "../errors.js";
 import {
-  type DiscoveryResult,
-  discoveryToProvenance,
-  resolveEnumOptionName,
-} from "../schema_discovery.js";
-import {
   buildMutationResult,
   mutationVariant,
   mutationVariantsToSchemas,
 } from "../mutation_envelope.js";
+import {
+  type DiscoveryResult,
+  discoveryToProvenance,
+  type FieldDefinition,
+  resolveEnumOptionName,
+} from "../schema_discovery.js";
 import { normalizeName, ProvenanceSchema } from "../teamspace_identity.js";
 import {
   type CreateTicketFields,
@@ -230,8 +231,10 @@ function requireTicketIdentity(
   if (task.custom_type === undefined || task.resource_subtype === undefined) {
     throw domainError("schema_drift", "Asana task response omitted ticket identity fields", trace);
   }
-  if (task.custom_type === null && allowMissingCustomType) {
-    return;
+  if (allowMissingCustomType) {
+    if (task.custom_type === null || task.custom_type.gid === snapshot.ticket_custom_type.gid) {
+      return;
+    }
   }
   if (
     task.resource_subtype !== "custom" ||
@@ -313,13 +316,17 @@ function defaultSleep(ms: number): Promise<void> {
   });
 }
 
-function typeOption(snapshot: DiscoveryResult, name: string) {
+function ticketTypeField(snapshot: DiscoveryResult): FieldDefinition {
   if (snapshot.ticket_type_field === null) {
     throw new CommandError("invalid_input", "Ticket type is unavailable in this Teamspace", {
       details: { field: "type" },
     });
   }
-  return resolveEnumOptionName(snapshot.ticket_type_field, name);
+  return snapshot.ticket_type_field;
+}
+
+function typeOption(snapshot: DiscoveryResult, name: string) {
+  return resolveEnumOptionName(ticketTypeField(snapshot), name);
 }
 
 function validateDeferredCreateOptions(
@@ -366,7 +373,9 @@ function buildLabelValue(
   const current = currentLabelGids(task, snapshot, trace);
   let next: string[];
   if (labels.set !== undefined) {
-    next = [...new Set(labels.set.map((name) => resolveEnumOptionName(snapshot.labels_field, name).gid))];
+    next = [
+      ...new Set(labels.set.map((name) => resolveEnumOptionName(snapshot.labels_field, name).gid)),
+    ];
   } else {
     const selected = new Set(current);
     for (const name of labels.add ?? []) {
@@ -405,7 +414,7 @@ function buildUpdateBody(
 
   const customFields: Record<string, UpdateCustomFieldValue> = {};
   if (fields.type !== undefined) {
-    customFields[snapshot.ticket_type_field?.gid ?? ""] = typeOption(snapshot, fields.type).gid;
+    customFields[ticketTypeField(snapshot).gid] = typeOption(snapshot, fields.type).gid;
   }
   if (fields.predicted_start_on !== undefined) {
     customFields[snapshot.predicted_start_date_field.gid] =
@@ -489,15 +498,12 @@ function labelMismatches(
       requested.set.map((name) => resolveEnumOptionName(snapshot.labels_field, name).name),
     );
     return (
-      actualNames.size !== expected.size ||
-      [...expected].some((name) => !actualNames.has(name))
+      actualNames.size !== expected.size || [...expected].some((name) => !actualNames.has(name))
     );
   }
 
   const removed = normalizedSet(
-    (requested.remove ?? []).map(
-      (name) => resolveEnumOptionName(snapshot.labels_field, name).name,
-    ),
+    (requested.remove ?? []).map((name) => resolveEnumOptionName(snapshot.labels_field, name).name),
   );
   const added = normalizedSet(
     (requested.add ?? []).map((name) => resolveEnumOptionName(snapshot.labels_field, name).name),
@@ -614,8 +620,7 @@ function isTimeout(error: unknown): boolean {
 
 function isInitializedTicket(task: Task, snapshot: DiscoveryResult): boolean {
   return (
-    task.resource_subtype === "custom" &&
-    task.custom_type?.gid === snapshot.ticket_custom_type.gid
+    task.resource_subtype === "custom" && task.custom_type?.gid === snapshot.ticket_custom_type.gid
   );
 }
 
@@ -765,10 +770,7 @@ export function createTicketService(
           trace,
         );
       }
-      if (
-        task.custom_type !== null &&
-        task.custom_type.gid !== snapshot.ticket_custom_type.gid
-      ) {
+      if (task.custom_type !== null && task.custom_type.gid !== snapshot.ticket_custom_type.gid) {
         throw new CommandError(
           "schema_incompatible",
           "Created task initialized as a different custom type",
@@ -889,14 +891,7 @@ export function createTicketService(
       );
     }
 
-    const ticket = await updateInitialized(
-      task,
-      fields,
-      fields,
-      snapshot,
-      deadlineMs,
-      trace,
-    );
+    const ticket = await updateInitialized(task, fields, fields, snapshot, deadlineMs, trace);
     return buildMutationResult(
       UpdateTicketSucceededVariant,
       { ticket },

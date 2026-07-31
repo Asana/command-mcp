@@ -19,7 +19,7 @@ import type {
 } from "../src/asana_gateway.js";
 import { CommandError } from "../src/errors.js";
 import type { DiscoveryResult } from "../src/schema_discovery.js";
-import { PendingInitializationSchema } from "../src/ticket_inputs.js";
+import { PendingInitializationSchema, type UpdateTicketFields } from "../src/ticket_inputs.js";
 import {
   CREATE_PENDING_WARNING,
   createTicketService,
@@ -32,6 +32,18 @@ const TYPE_FIELD_GID = "1900000000000010";
 const FEATURE_GID = "1900000000000011";
 const CUSTOMER_GID = "1900000000000012";
 const URGENT_GID = "1900000000000013";
+
+const VERIFICATION_MISMATCH_CASES: Array<[string, UpdateTicketFields]> = [
+  ["name", { name: "Changed" }],
+  ["description", { description: "Changed" }],
+  ["completed", { completed: true }],
+  ["type", { type: "feature" }],
+  ["labels", { labels: { add: ["Urgent"] } }],
+  ["assignee", { assignee: "ada@example.com" }],
+  ["due_on", { due_on: "2026-08-10" }],
+  ["predicted_start_on", { predicted_start_on: "2026-08-11" }],
+  ["predicted_completion_on", { predicted_completion_on: "2026-08-12" }],
+];
 
 function unexpectedCall(name: string): never {
   throw new Error(`Unexpected call to ${name}`);
@@ -94,7 +106,6 @@ function executor(
 ): AsanaRequestExecutorPort {
   async function invoke<TSchema extends z.ZodTypeAny>(
     schema: TSchema,
-    deadlineMs: number,
     callback: (resources: AsanaResourceBundle) => Promise<AsanaHttpResult>,
     trace: AsanaRequestTrace | undefined,
   ): Promise<z.infer<TSchema>> {
@@ -112,11 +123,11 @@ function executor(
     },
     read: async (schema, options, callback, trace) => {
       observed.reads.push(options.deadlineMs);
-      return invoke(schema, options.deadlineMs, callback, trace);
+      return invoke(schema, callback, trace);
     },
     write: async (schema, options, callback, trace) => {
       observed.writes.push(options.deadlineMs);
-      return invoke(schema, options.deadlineMs, callback, trace);
+      return invoke(schema, callback, trace);
     },
     readPage: async () => unexpectedCall("executor.readPage"),
   };
@@ -230,40 +241,37 @@ describe("create ticket mutation", () => {
     const updateBodies: unknown[] = [];
     const reads = [
       ticket(discovered),
-      ticket(
-        discovered,
-        {
-          notes: "Details",
-          due_on: "2026-08-10",
-          assignee: { gid: "1800000000000001", name: "Ada", email: "ada@example.com" },
-          custom_fields: [
-            ...(ticket(discovered).custom_fields ?? []).filter(
-              (field) =>
-                field.gid !== TYPE_FIELD_GID &&
-                field.gid !== discovered.labels_field.gid &&
-                field.gid !== discovered.predicted_start_date_field.gid,
-            ),
-            {
-              gid: TYPE_FIELD_GID,
-              name: "Type",
-              resource_subtype: "enum",
-              enum_value: { gid: FEATURE_GID, name: "Feature" },
-            },
-            {
-              gid: discovered.labels_field.gid,
-              name: "Labels",
-              resource_subtype: "multi_enum",
-              multi_enum_values: [{ gid: CUSTOMER_GID, name: "Customer" }],
-            },
-            {
-              gid: discovered.predicted_start_date_field.gid,
-              name: "Predicted Start",
-              resource_subtype: "date",
-              date_value: { date: "2026-08-01", date_time: null },
-            },
-          ],
-        },
-      ),
+      ticket(discovered, {
+        notes: "Details",
+        due_on: "2026-08-10",
+        assignee: { gid: "1800000000000001", name: "Ada", email: "ada@example.com" },
+        custom_fields: [
+          ...(ticket(discovered).custom_fields ?? []).filter(
+            (field) =>
+              field.gid !== TYPE_FIELD_GID &&
+              field.gid !== discovered.labels_field.gid &&
+              field.gid !== discovered.predicted_start_date_field.gid,
+          ),
+          {
+            gid: TYPE_FIELD_GID,
+            name: "Type",
+            resource_subtype: "enum",
+            enum_value: { gid: FEATURE_GID, name: "Feature" },
+          },
+          {
+            gid: discovered.labels_field.gid,
+            name: "Labels",
+            resource_subtype: "multi_enum",
+            multi_enum_values: [{ gid: CUSTOMER_GID, name: "Customer" }],
+          },
+          {
+            gid: discovered.predicted_start_date_field.gid,
+            name: "Predicted Start",
+            resource_subtype: "date",
+            date_value: { date: "2026-08-01", date_time: null },
+          },
+        ],
+      }),
     ];
     let creates = 0;
     const service = createTicketService(
@@ -384,6 +392,43 @@ describe("create ticket mutation", () => {
     expect(PendingInitializationSchema.parse(mutation.data)).toEqual(mutation.data);
   });
 
+  it("uses the call deadline when it is earlier than the configured create timeout", async () => {
+    const discovered = snapshot();
+    const observed = state();
+    let now = 100;
+    const sleeps: number[] = [];
+    const service = createTicketService(
+      executor(
+        resources({
+          createTask: async () => result({ gid: TASK_GID }),
+          getTask: async () =>
+            result(
+              ticket(discovered, {
+                resource_subtype: "default_task",
+                custom_type: null,
+              }),
+            ),
+        }),
+        observed,
+      ),
+      {
+        createTimeoutMs: 20,
+        pollIntervalMs: 7,
+        clock: () => now,
+        sleep: async (ms) => {
+          sleeps.push(ms);
+          now += ms;
+        },
+      },
+    );
+
+    await expect(
+      service.createTicket({ name: "New ticket" }, discovered, 112),
+    ).resolves.toMatchObject({ status: "pending" });
+    expect(observed.reads).toEqual([112, 112]);
+    expect(sleeps).toEqual([7, 5]);
+  });
+
   it("fails when the created task initializes as a different custom type", async () => {
     const discovered = snapshot();
     const observed = state();
@@ -468,7 +513,7 @@ describe("update ticket mutation", () => {
             result(
               ticket(discovered, {
                 resource_subtype: "default_task",
-                custom_type: null,
+                custom_type: discovered.ticket_custom_type,
               }),
             ),
         }),
@@ -599,84 +644,59 @@ describe("update ticket mutation", () => {
     ]);
   });
 
-  it("reports exactly every requested field that the post-write read does not confirm", async () => {
-    const discovered = snapshot();
-    const observed = state();
-    const unchanged = ticket(discovered);
-    const service = createTicketService(
-      executor(
-        resources({
-          getTask: async () => result(unchanged),
-          updateTask: async () => result({ gid: TASK_GID }, "write-request"),
-        }),
-        observed,
-      ),
-    );
+  it.each(VERIFICATION_MISMATCH_CASES)(
+    "reports exactly the unconfirmed %s field and request IDs",
+    async (field, fields) => {
+      const discovered = snapshot();
+      const observed = state();
+      const unchanged = ticket(discovered);
+      const service = createTicketService(
+        executor(
+          resources({
+            getTask: async () => result(unchanged),
+            updateTask: async () => result({ gid: TASK_GID }, "write-request"),
+          }),
+          observed,
+        ),
+      );
 
-    await expect(
-      service.updateTicket(
-        TASK_GID,
-        {
-          name: "Changed",
-          description: "Changed",
-          completed: true,
-          type: "feature",
-          labels: { add: ["Urgent"] },
-          assignee: "ada@example.com",
-          due_on: "2026-08-10",
-          predicted_start_on: "2026-08-11",
-          predicted_completion_on: "2026-08-12",
+      await expect(
+        service.updateTicket(TASK_GID, fields, discovered, DEADLINE_MS),
+      ).rejects.toMatchObject({
+        code: "asana_api_error",
+        details: {
+          ticket_gid: TASK_GID,
+          mismatched_fields: [field],
         },
-        discovered,
-        DEADLINE_MS,
-      ),
-    ).rejects.toMatchObject({
-      code: "asana_api_error",
-      details: {
-        ticket_gid: TASK_GID,
-        mismatched_fields: [
-          "name",
-          "description",
-          "completed",
-          "type",
-          "labels",
-          "assignee",
-          "due_on",
-          "predicted_start_on",
-          "predicted_completion_on",
-        ],
-      },
-      asanaRequestIds: ["write-request"],
-    });
-  });
+        asanaRequestIds: ["write-request"],
+      });
+    },
+  );
 
   it("verifies canonical type and label casing and an email-address assignee", async () => {
     const discovered = snapshot();
     const observed = state();
     const initial = ticket(discovered);
-    const verified = ticket(
-      discovered,
-      {
-        assignee: { gid: "1800000000000001", name: "Ada", email: "ADA@EXAMPLE.COM" },
-        custom_fields: [
-          ...(initial.custom_fields ?? []).filter(
-            (field) => field.gid !== TYPE_FIELD_GID && field.gid !== discovered.labels_field.gid,
-          ),
-          {
-            gid: TYPE_FIELD_GID,
-            name: "Type",
-            resource_subtype: "enum",
-            enum_value: { gid: FEATURE_GID, name: "Feature" },
-          },
-          {
-            gid: discovered.labels_field.gid,
-            name: "Labels",
-            resource_subtype: "multi_enum",
-            multi_enum_values: [{ gid: CUSTOMER_GID, name: "Customer" }],
-          },
-        ],
-      },
-    );
+    const verified = ticket(discovered, {
+      assignee: { gid: "1800000000000001", name: "Ada", email: "ADA@EXAMPLE.COM" },
+      custom_fields: [
+        ...(initial.custom_fields ?? []).filter(
+          (field) => field.gid !== TYPE_FIELD_GID && field.gid !== discovered.labels_field.gid,
+        ),
+        {
+          gid: TYPE_FIELD_GID,
+          name: "Type",
+          resource_subtype: "enum",
+          enum_value: { gid: FEATURE_GID, name: "Feature" },
+        },
+        {
+          gid: discovered.labels_field.gid,
+          name: "Labels",
+          resource_subtype: "multi_enum",
+          multi_enum_values: [{ gid: CUSTOMER_GID, name: "Customer" }],
+        },
+      ],
+    });
     const reads = [initial, verified];
     const service = createTicketService(
       executor(
@@ -717,12 +737,7 @@ describe("update ticket mutation", () => {
     );
 
     await expect(
-      service.updateTicket(
-        TASK_GID,
-        { labels: { remove: ["customer"] } },
-        discovered,
-        DEADLINE_MS,
-      ),
+      service.updateTicket(TASK_GID, { labels: { remove: ["customer"] } }, discovered, DEADLINE_MS),
     ).rejects.toMatchObject({
       code: "asana_api_error",
       details: { mismatched_fields: ["labels"] },

@@ -147,8 +147,10 @@ export function defineUnscopedTool<
   };
 }
 
-type HandlerInputWithoutTeamspaceId<TInputSchema extends z.ZodTypeAny> =
-  Omit<z.infer<TInputSchema>, "teamspace_id">;
+type HandlerInputWithoutTeamspaceId<TInputSchema extends z.ZodTypeAny> = Omit<
+  z.infer<TInputSchema>,
+  "teamspace_id"
+>;
 
 function stripTeamspaceId<TInputSchema extends z.ZodTypeAny>(
   input: z.infer<TInputSchema>,

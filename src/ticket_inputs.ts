@@ -101,7 +101,9 @@ export const CreateTicketFieldsSchema = z
     description: z.string().describe("The initial plain-text description").optional(),
     type: NonEmptyNameSchema.describe("A Teamspace-local ticket type option name").optional(),
     labels: LabelNamesSchema.describe("Initial Teamspace-local label option names").optional(),
-    assignee: AssigneeIdentifierSchema.describe("Initial assignee user GID or email address").optional(),
+    assignee: AssigneeIdentifierSchema.describe(
+      "Initial assignee user GID or email address",
+    ).optional(),
     due_on: DateOnlySchema.describe("Initial due date in YYYY-MM-DD form").optional(),
     predicted_start_on: DateOnlySchema.describe(
       "Initial predicted start date in YYYY-MM-DD form",
@@ -123,10 +125,11 @@ export const PendingInitializationSchema = z
         update_ticket: UpdateTicketFieldsSchema.refine(
           (fields) => Object.keys(fields).length > 0,
           "Pending update_ticket fields must not be empty",
-        ),
+        ).describe("Non-empty fields to pass to update_ticket when initialization completes"),
       })
-      .strict(),
-    retry_with: z.literal("update_ticket"),
+      .strict()
+      .describe("The resumable mutation that remains to be applied"),
+    retry_with: z.literal("update_ticket").describe("The tool to call to resume initialization"),
   })
   .strict();
 
