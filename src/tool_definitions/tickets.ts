@@ -145,11 +145,14 @@ const updateTicket = defineTeamspaceScopedTool({
   },
 });
 
+export const ticketReadToolDefinitions = [readTicket] as const;
+export const ticketListingToolDefinitions = [listTickets, searchTickets] as const;
+export const pullRequestToolDefinitions = [getTicketPullRequests] as const;
+export const ticketMutationToolDefinitions = [createTicket, updateTicket] as const;
+
 export const ticketToolDefinitions = [
-  readTicket,
-  listTickets,
-  searchTickets,
-  getTicketPullRequests,
-  createTicket,
-  updateTicket,
+  ...ticketReadToolDefinitions,
+  ...ticketListingToolDefinitions,
+  ...pullRequestToolDefinitions,
+  ...ticketMutationToolDefinitions,
 ] as const;
