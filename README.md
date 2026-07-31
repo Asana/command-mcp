@@ -45,17 +45,14 @@ The absolute script path makes the registration independent of the client's work
 Export the token in the shell or profile that launches Claude Code, then register the server at user scope:
 
 ```sh
-export ASANA_ACCESS_TOKEN="replace-with-your-personal-access-token"
-
 claude mcp add \
-  --env 'ASANA_ACCESS_TOKEN=${ASANA_ACCESS_TOKEN}' \
+  --env 'ASANA_ACCESS_TOKEN=replace-with-your-personal-access-token' \
   --transport stdio \
   --scope user \
   asana-command \
   -- node /absolute/path/to/command-mcp/dist/index.js
 ```
-
-The `--` separates Claude Code's options from the server command. The quoted variable reference keeps the token out of Claude Code's configuration, so `ASANA_ACCESS_TOKEN` must also be set in the environment that launches Claude Code. Confirm the registration with:
+Confirm the registration with:
 
 ```sh
 claude mcp get asana-command
