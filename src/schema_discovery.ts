@@ -640,3 +640,18 @@ export function resolveRelease(discovery: DiscoveryResult, identifier: string): 
     },
   });
 }
+
+export type SchemaDiscoveryService = {
+  discover(teamspaceId: string, deadlineMs: number): Promise<DiscoveryResult>;
+};
+
+export function createSchemaDiscoveryService(
+  executor: AsanaRequestExecutorPort,
+): SchemaDiscoveryService {
+  return {
+    discover(teamspaceId, deadlineMs) {
+      const trace = executor.createTrace();
+      return discoverTeamspaceSchema(executor, teamspaceId, { deadlineMs }, trace);
+    },
+  };
+}
