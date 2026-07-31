@@ -16,6 +16,8 @@ describe("buildServices", () => {
     expect(typeof services.tickets.resolve).toBe("function");
     expect(typeof services.tickets.readByGid).toBe("function");
     expect(typeof services.tickets.readTicket).toBe("function");
+    expect(typeof services.tickets.createTicket).toBe("function");
+    expect(typeof services.tickets.updateTicket).toBe("function");
     expect(typeof services.executor.createTrace).toBe("function");
   });
 });

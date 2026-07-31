@@ -147,16 +147,12 @@ export function defineUnscopedTool<
   };
 }
 
-type TeamspaceScopedInput<TShape extends z.ZodRawShape> = z.ZodObject<
-  TShape & { teamspace_id: typeof TeamspaceIdentifierSchema }
+type HandlerInputWithoutTeamspaceId<TInputSchema extends z.ZodTypeAny> = Omit<
+  z.infer<TInputSchema>,
+  "teamspace_id"
 >;
 
-type HandlerInputWithoutTeamspaceId<TInputSchema extends z.ZodTypeAny> =
-  TInputSchema extends z.ZodObject<z.ZodRawShape>
-    ? Omit<z.infer<TInputSchema>, "teamspace_id">
-    : never;
-
-function stripTeamspaceId<TInputSchema extends TeamspaceScopedInput<z.ZodRawShape>>(
+function stripTeamspaceId<TInputSchema extends z.ZodTypeAny>(
   input: z.infer<TInputSchema>,
 ): HandlerInputWithoutTeamspaceId<TInputSchema> {
   const { teamspace_id: _teamspaceId, ...handlerInput } = input as z.infer<TInputSchema> & {
@@ -166,7 +162,7 @@ function stripTeamspaceId<TInputSchema extends TeamspaceScopedInput<z.ZodRawShap
 }
 
 type TeamspaceScopedToolConfig<
-  TInputSchema extends TeamspaceScopedInput<z.ZodRawShape>,
+  TInputSchema extends z.ZodTypeAny,
   TOutputSchema extends z.ZodTypeAny,
 > = BaseToolConfig<TInputSchema, TOutputSchema> & {
   readonly handler: (
@@ -176,7 +172,7 @@ type TeamspaceScopedToolConfig<
 };
 
 export function defineTeamspaceScopedTool<
-  TInputSchema extends TeamspaceScopedInput<z.ZodRawShape>,
+  TInputSchema extends z.ZodTypeAny,
   TOutputSchema extends z.ZodTypeAny,
 >(config: TeamspaceScopedToolConfig<TInputSchema, TOutputSchema>): ToolDefinition {
   const protocolInputSchema = config.protocolInput ?? config.input;
@@ -194,8 +190,9 @@ export function defineTeamspaceScopedTool<
     annotations: buildToolAnnotations(config.title, config.readOnly, config),
     execute: async (input, context) => {
       const parsedInput = parseToolInput(config.input, input);
+      const scopedInput = parsedInput as { teamspace_id?: unknown };
       const teamspaceId = resolveTeamspaceIdentifier(
-        TeamspaceIdentifierSchema.parse(parsedInput.teamspace_id),
+        TeamspaceIdentifierSchema.parse(scopedInput.teamspace_id),
       );
       const schema = await context.services.schemaDiscovery.discover(
         teamspaceId,

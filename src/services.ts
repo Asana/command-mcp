@@ -22,6 +22,6 @@ export function buildServices(
   const executor = new AsanaRequestExecutor(config, options);
   const context = createContextService(executor);
   const schemaDiscovery = createSchemaDiscoveryService(executor);
-  const tickets = createTicketService(executor);
+  const tickets = createTicketService(executor, { createTimeoutMs: config.createTimeoutMs });
   return { executor, context, schemaDiscovery, tickets };
 }

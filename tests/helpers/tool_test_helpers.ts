@@ -51,6 +51,8 @@ export function createUnexpectedTicketServiceFake(): TicketService {
     resolve: async () => unexpectedExecutorCall("TicketService.resolve"),
     readByGid: async () => unexpectedExecutorCall("TicketService.readByGid"),
     readTicket: async () => unexpectedExecutorCall("TicketService.readTicket"),
+    createTicket: async () => unexpectedExecutorCall("TicketService.createTicket"),
+    updateTicket: async () => unexpectedExecutorCall("TicketService.updateTicket"),
   };
 }
 
