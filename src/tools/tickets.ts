@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { FULL_TASK_FIELDS, GidSchema, type Task, TaskSchema } from "./asana_contracts.js";
-import type { AsanaRequestExecutorPort, AsanaRequestTrace } from "./asana_gateway.js";
-import { tryParseAsanaAppUrl } from "./asana_url.js";
-import { CommandError } from "./errors.js";
-import { type DiscoveryResult, discoveryToProvenance } from "./schema_discovery.js";
-import { ProvenanceSchema } from "./teamspace_identity.js";
-import { DateOnlySchema, TicketIdentifierSchema } from "./ticket_inputs.js";
+import { FULL_TASK_FIELDS, GidSchema, type Task, TaskSchema } from "../asana_contracts.js";
+import type { AsanaRequestExecutorPort, AsanaRequestTrace } from "../asana_gateway.js";
+import { tryParseAsanaAppUrl } from "../asana_url.js";
+import { CommandError } from "../errors.js";
+import { type DiscoveryResult, discoveryToProvenance } from "../schema_discovery.js";
+import { ProvenanceSchema } from "../teamspace_identity.js";
+import { DateOnlySchema, TicketIdentifierSchema } from "../ticket_inputs.js";
 
 const SHORT_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]*-\d+$/;
 

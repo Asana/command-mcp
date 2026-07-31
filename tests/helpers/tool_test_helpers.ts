@@ -1,9 +1,9 @@
 import type { AsanaRequestExecutorPort } from "../../src/asana_gateway.js";
 import type { Config } from "../../src/config.js";
-import type { ContextService } from "../../src/context.js";
 import type { DiscoveryResult } from "../../src/schema_discovery.js";
 import type { CommandServices } from "../../src/services.js";
-import type { TicketService } from "../../src/tickets.js";
+import type { ContextService } from "../../src/tools/context.js";
+import type { TicketService } from "../../src/tools/tickets.js";
 
 export const CONFIG: Config = {
   accessToken: "test-token",

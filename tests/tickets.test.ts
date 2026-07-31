@@ -18,7 +18,7 @@ import type {
   AsanaResourceBundle,
 } from "../src/asana_gateway.js";
 import type { DiscoveryResult } from "../src/schema_discovery.js";
-import { createTicketService, projectTicketView, TicketViewSchema } from "../src/tickets.js";
+import { createTicketService, projectTicketView, TicketViewSchema } from "../src/tools/tickets.js";
 import { buildDiscoverySnapshot, DEADLINE_MS, TEAMSPACE_ID } from "./helpers/tool_test_helpers.js";
 
 const TICKET_GID = "1700000000000001";

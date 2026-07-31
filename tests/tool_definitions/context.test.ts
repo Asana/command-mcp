@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import type { ContextService } from "../../src/context.js";
-import { createContextService } from "../../src/context.js";
 import { DiscoveryResultSchema, type SchemaDiscoveryService } from "../../src/schema_discovery.js";
 import type { CommandServices } from "../../src/services.js";
 import { contextToolDefinitions } from "../../src/tool_definitions/context.js";
 import type { CallContext, ToolDefinition } from "../../src/tool_registry.js";
+import type { ContextService } from "../../src/tools/context.js";
+import { createContextService } from "../../src/tools/context.js";
 import {
   buildDiscoverySnapshot,
   createUnexpectedExecutorFake,

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import type { TicketService } from "../../src/tickets.js";
-import { ReadTicketOutputSchema } from "../../src/tickets.js";
 import { ticketToolDefinitions } from "../../src/tool_definitions/tickets.js";
 import type { CallContext, ToolDefinition } from "../../src/tool_registry.js";
+import type { TicketService } from "../../src/tools/tickets.js";
+import { ReadTicketOutputSchema } from "../../src/tools/tickets.js";
 import {
   buildDiscoverySnapshot,
   createDiscoveryState,
