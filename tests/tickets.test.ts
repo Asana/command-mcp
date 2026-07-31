@@ -22,6 +22,8 @@ import { createTicketService, projectTicketView, TicketViewSchema } from "../src
 import { buildDiscoverySnapshot, DEADLINE_MS, TEAMSPACE_ID } from "./helpers/tool_test_helpers.js";
 
 const TICKET_GID = "1700000000000001";
+const RELEASE_GID = "1700000000000098";
+const OTHER_RELEASE_GID = "1700000000000099";
 
 function unexpectedCall(name: string): never {
   throw new Error(`Unexpected call to ${name}`);
@@ -338,7 +340,29 @@ function richTask(snapshot: DiscoveryResult): Task {
 describe("ticket view", () => {
   it("maps every field using discovered field GIDs", () => {
     const snapshot = buildDiscoverySnapshot(TEAMSPACE_ID);
+    snapshot.releases = [
+      {
+        gid: RELEASE_GID,
+        name: "August 2026",
+        due_on: "2026-08-31",
+        completed: false,
+        current_status_update: null,
+      },
+      {
+        gid: OTHER_RELEASE_GID,
+        name: "September 2026",
+        due_on: null,
+        completed: false,
+        current_status_update: null,
+      },
+    ];
     const source = richTask(snapshot);
+    source.projects = [
+      { gid: snapshot.teamspace.gid, name: snapshot.teamspace.name },
+      { gid: OTHER_RELEASE_GID, name: "Stale project name" },
+      { gid: "1700000000000097", name: "Non-Release project" },
+      { gid: RELEASE_GID, name: "August 2026" },
+    ];
 
     const view = projectTicketView(source, snapshot);
 
@@ -361,9 +385,31 @@ describe("ticket view", () => {
       predicted_start_on: "2026-08-01",
       predicted_completion_on: "2026-08-10",
       dependencies: [{ gid: "1700000000000011", name: "Ship request executor" }],
+      releases: [
+        { gid: RELEASE_GID, name: "August 2026" },
+        { gid: OTHER_RELEASE_GID, name: "September 2026" },
+      ],
       url: `https://app.asana.com/0/0/${TICKET_GID}`,
     });
     expect(TicketViewSchema.parse(view)).toEqual(view);
+  });
+
+  it.each([
+    ["has no Release project", [{ gid: TEAMSPACE_ID, name: "Engineering Teamspace" }]],
+    ["omits projects", undefined],
+  ])("returns an empty Release list when the task %s", (_label, projects) => {
+    const snapshot = buildDiscoverySnapshot(TEAMSPACE_ID);
+    snapshot.releases = [
+      {
+        gid: RELEASE_GID,
+        name: "August 2026",
+        due_on: "2026-08-31",
+        completed: false,
+        current_status_update: null,
+      },
+    ];
+
+    expect(projectTicketView(task(snapshot, { projects }), snapshot).releases).toEqual([]);
   });
 
   it("falls back from the custom-ID value to its display value", () => {

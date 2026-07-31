@@ -11,17 +11,18 @@ import {
   type DiscoveryResult,
   discoveryToProvenance,
   type ReleaseReference,
-  ReleaseReferenceSchema,
   readReferencedReleaseGids,
+  ReleaseReferenceSchema,
   resolveRelease,
 } from "../schema_discovery.js";
 import { ProvenanceSchema } from "../teamspace_identity.js";
+import {
+  currentReleaseMemberships,
+  ReleaseMembershipSchema,
+} from "./release_memberships.js";
 import type { TicketService } from "./tickets.js";
 
-export const ReleaseMembershipSchema = ReleaseReferenceSchema.pick({
-  gid: true,
-  name: true,
-});
+export { ReleaseMembershipSchema } from "./release_memberships.js";
 
 export const TeamspaceReleasesOutputSchema = ProvenanceSchema.extend({
   releases: z.array(ReleaseReferenceSchema),
@@ -98,16 +99,6 @@ function resolveReleaseWithTrace(
     }
     throw error;
   }
-}
-
-function currentMemberships(
-  projects: ReadonlyArray<{ gid: string }>,
-  snapshot: DiscoveryResult,
-): Array<{ gid: string; name: string }> {
-  const projectGids = new Set(projects.map((project) => project.gid));
-  return snapshot.releases
-    .filter((release) => projectGids.has(release.gid))
-    .map(({ gid, name }) => ({ gid, name }));
 }
 
 function verificationError(
@@ -197,7 +188,7 @@ export function createReleaseService(
         asanaRequestIds: [...trace.requestIds],
       });
     }
-    const memberships = currentMemberships(reread.projects, snapshot);
+    const memberships = currentReleaseMemberships(reread.projects, snapshot);
     const targetIsPresent = memberships.some((membership) => membership.gid === release.gid);
     if ((direction === "add") !== targetIsPresent) {
       throw verificationError(direction, ticket.gid, release, trace);

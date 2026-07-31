@@ -51,6 +51,7 @@ function ticketView() {
     predicted_start_on: null,
     predicted_completion_on: null,
     dependencies: [],
+    releases: [],
     url: null,
   };
 }

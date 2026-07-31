@@ -30,6 +30,10 @@ import {
   TicketIdentifierSchema,
   type UpdateTicketFields,
 } from "../ticket_inputs.js";
+import {
+  currentReleaseMemberships,
+  ReleaseMembershipSchema,
+} from "./release_memberships.js";
 
 const SHORT_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]*-\d+$/;
 const DEFAULT_CREATE_TIMEOUT_MS = 30_000;
@@ -74,6 +78,9 @@ export const TicketViewSchema = z.object({
   predicted_start_on: DateOnlySchema.nullable().describe("Predicted start date or null"),
   predicted_completion_on: DateOnlySchema.nullable().describe("Predicted completion date or null"),
   dependencies: z.array(DependencyViewSchema).describe("Tasks blocking this ticket"),
+  releases: z
+    .array(ReleaseMembershipSchema)
+    .describe("Releases referenced by this Teamspace that contain the ticket"),
   url: z.string().url().nullable().describe("Canonical Asana task URL or null"),
 });
 
@@ -296,6 +303,7 @@ export function projectTicketView(task: Task, snapshot: DiscoveryResult): Ticket
     predicted_start_on: projectedDate(task, snapshot.predicted_start_date_field.gid),
     predicted_completion_on: projectedDate(task, snapshot.predicted_completion_date_field.gid),
     dependencies,
+    releases: currentReleaseMemberships(task.projects, snapshot),
     url: task.permalink_url ?? null,
   });
 }
