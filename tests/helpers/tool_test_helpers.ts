@@ -5,6 +5,7 @@ import type { CommandServices } from "../../src/services.js";
 import type { CommentService } from "../../src/tools/comments.js";
 import type { ContextService } from "../../src/tools/context.js";
 import type { TicketService } from "../../src/tools/tickets.js";
+import type { WorkflowService } from "../../src/tools/workflow.js";
 
 export const CONFIG: Config = {
   accessToken: "test-token",
@@ -64,6 +65,13 @@ export function createUnexpectedTicketServiceFake(): TicketService {
   };
 }
 
+export function createUnexpectedWorkflowServiceFake(): WorkflowService {
+  return {
+    addDependency: async () => unexpectedExecutorCall("WorkflowService.addDependency"),
+    removeDependency: async () => unexpectedExecutorCall("WorkflowService.removeDependency"),
+  };
+}
+
 export function buildDiscoverySnapshot(teamspaceId: string): DiscoveryResult {
   return {
     workspace: { gid: "1500000000000001", name: "Command Workspace" },
@@ -115,7 +123,11 @@ export function createFakeSchemaDiscoveryService(state: FakeSchemaDiscoveryState
 
 export function createTestContainer(
   state: FakeSchemaDiscoveryState,
-  overrides: { comments?: CommentService; tickets?: TicketService } = {},
+  overrides: {
+    comments?: CommentService;
+    tickets?: TicketService;
+    workflow?: WorkflowService;
+  } = {},
 ): CommandServices {
   return {
     executor: createUnexpectedExecutorFake(),
@@ -123,6 +135,7 @@ export function createTestContainer(
     schemaDiscovery: createFakeSchemaDiscoveryService(state),
     comments: overrides.comments ?? createUnexpectedCommentServiceFake(),
     tickets: overrides.tickets ?? createUnexpectedTicketServiceFake(),
+    workflow: overrides.workflow ?? createUnexpectedWorkflowServiceFake(),
   };
 }
 
