@@ -7,12 +7,14 @@ import type { Config } from "./config.js";
 import { createSchemaDiscoveryService, type SchemaDiscoveryService } from "./schema_discovery.js";
 import { type ContextService, createContextService } from "./tools/context.js";
 import { createTicketService, type TicketService } from "./tools/tickets.js";
+import { createWorkflowService, type WorkflowService } from "./tools/workflow.js";
 
 export type CommandServices = {
   readonly executor: AsanaRequestExecutorPort;
   readonly context: ContextService;
   readonly schemaDiscovery: SchemaDiscoveryService;
   readonly tickets: TicketService;
+  readonly workflow: WorkflowService;
 };
 
 export function buildServices(
@@ -23,5 +25,6 @@ export function buildServices(
   const context = createContextService(executor);
   const schemaDiscovery = createSchemaDiscoveryService(executor);
   const tickets = createTicketService(executor, { createTimeoutMs: config.createTimeoutMs });
-  return { executor, context, schemaDiscovery, tickets };
+  const workflow = createWorkflowService(executor, tickets);
+  return { executor, context, schemaDiscovery, tickets, workflow };
 }

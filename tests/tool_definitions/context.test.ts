@@ -10,6 +10,7 @@ import {
   buildDiscoverySnapshot,
   createUnexpectedExecutorFake,
   createUnexpectedTicketServiceFake,
+  createUnexpectedWorkflowServiceFake,
   DEADLINE_MS,
   TEAMSPACE_ID,
 } from "../helpers/tool_test_helpers.js";
@@ -52,6 +53,7 @@ function createServices(options: {
     context: options.context ?? createUnexpectedContextService(),
     schemaDiscovery: options.schemaDiscovery ?? createUnexpectedDiscoveryService(),
     tickets: createUnexpectedTicketServiceFake(),
+    workflow: createUnexpectedWorkflowServiceFake(),
   };
 }
 
@@ -267,6 +269,7 @@ describe("context tool definitions", () => {
       context: createContextService(executor),
       schemaDiscovery,
       tickets: createUnexpectedTicketServiceFake(),
+      workflow: createUnexpectedWorkflowServiceFake(),
     };
 
     await expect(
