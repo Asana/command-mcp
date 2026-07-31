@@ -10,8 +10,8 @@ import type {
 } from "asana";
 import { describe, expect, it } from "vitest";
 import {
-  collectionEnvelope,
   COMPACT_SEARCH_TASK_FIELDS,
+  collectionEnvelope,
   FULL_TASK_FIELDS,
   type Task,
 } from "../src/asana_contracts.js";
@@ -50,6 +50,12 @@ function createThrowingApi<T extends object>(apiName: string): T {
 type TaskMethods = {
   getTasksForProject?: TasksApi["getTasksForProjectWithHttpInfo"];
   searchTasksForWorkspace?: TasksApi["searchTasksForWorkspaceWithHttpInfo"];
+};
+
+type WorkspaceSearchOptions = NonNullable<
+  Parameters<TasksApi["searchTasksForWorkspaceWithHttpInfo"]>[1]
+> & {
+  limit?: number;
 };
 
 function createResourceBundle(methods: TaskMethods): AsanaResourceBundle {
@@ -127,11 +133,7 @@ function snapshot(): DiscoveryResult {
   };
 }
 
-function ticket(
-  discovered: DiscoveryResult,
-  gid: string,
-  overrides: Partial<Task> = {},
-): Task {
+function ticket(discovered: DiscoveryResult, gid: string, overrides: Partial<Task> = {}): Task {
   return {
     gid,
     name: `Ticket ${gid}`,
@@ -247,11 +249,7 @@ describe("ticket listing service", () => {
     });
 
     await expect(
-      service.listTickets(
-        { release: "Missing release", limit: 50 },
-        discovered,
-        DEADLINE_MS,
-      ),
+      service.listTickets({ release: "Missing release", limit: 50 }, discovered, DEADLINE_MS),
     ).rejects.toMatchObject({
       code: "unknown_release",
       details: {
@@ -293,11 +291,7 @@ describe("ticket listing service", () => {
       createExecutor(createResourceBundle({ getTasksForProject })),
       { maxScanTasks: 20 },
     );
-    const first = await service.listTickets(
-      { type: "BUG", limit: 1 },
-      discovered,
-      DEADLINE_MS,
-    );
+    const first = await service.listTickets({ type: "BUG", limit: 1 }, discovered, DEADLINE_MS);
     expect(first.tickets).toHaveLength(1);
     expect(first.next_cursor).toEqual(expect.any(String));
     expect(first.has_more).toBe(true);
@@ -351,8 +345,15 @@ describe("ticket listing service", () => {
     expect(truncated.scanned_count).toBe(2);
     expect(truncated.truncated).toBe(true);
 
-    const limited = await bounded.listTickets({ limit: 1 }, discovered, DEADLINE_MS);
-    expect(limited.truncated).toBe(true);
+    const matchingPage: TasksApi["getTasksForProjectWithHttpInfo"] = async () =>
+      pageResult([ticket(discovered, "1700000000000003")], "more");
+    const limited = createTicketListingService(
+      createExecutor(createResourceBundle({ getTasksForProject: matchingPage })),
+      { maxScanTasks: 2 },
+    );
+    const limitReached = await limited.listTickets({ limit: 1 }, discovered, DEADLINE_MS);
+    expect(limitReached.tickets).toHaveLength(1);
+    expect(limitReached.truncated).toBe(false);
   });
 });
 
@@ -473,7 +474,8 @@ describe("ticket search service", () => {
       options,
     ) => {
       calls += 1;
-      return pageResult(Array.from({ length: Number(options?.limit) }, () => repeated));
+      const request = options as WorkspaceSearchOptions;
+      return pageResult(Array.from({ length: Number(request.limit) }, () => repeated));
     };
     const service = createTicketListingService(
       createExecutor(createResourceBundle({ searchTasksForWorkspace })),
@@ -498,9 +500,10 @@ describe("ticket search service", () => {
       _workspaceGid,
       options,
     ) => {
-      requested += Number(options?.limit);
+      const request = options as WorkspaceSearchOptions;
+      requested += Number(request.limit);
       return pageResult(
-        Array.from({ length: Number(options?.limit) }, (_, index) =>
+        Array.from({ length: Number(request.limit) }, (_, index) =>
           ticket(discovered, `170000000000000${index + 1}`, {
             custom_type: { gid: "1800000000000099", name: "Other" },
           }),
@@ -522,4 +525,3 @@ describe("ticket search service", () => {
     expect(result.truncated).toBe(true);
   });
 });
-

@@ -6,10 +6,7 @@ import {
 import type { Config } from "./config.js";
 import { createSchemaDiscoveryService, type SchemaDiscoveryService } from "./schema_discovery.js";
 import { type ContextService, createContextService } from "./tools/context.js";
-import {
-  createTicketListingService,
-  type TicketListingService,
-} from "./tools/ticket_listing.js";
+import { createTicketListingService, type TicketListingService } from "./tools/ticket_listing.js";
 import { createTicketService, type TicketService } from "./tools/tickets.js";
 
 export type CommandServices = {

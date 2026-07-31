@@ -5,7 +5,11 @@ import {
   type Task,
   TaskSchema,
 } from "../asana_contracts.js";
-import type { AsanaRequestExecutorPort, AsanaRequestTrace } from "../asana_gateway.js";
+import type {
+  AsanaHttpResult,
+  AsanaRequestExecutorPort,
+  AsanaRequestTrace,
+} from "../asana_gateway.js";
 import { CommandError } from "../errors.js";
 import { createCursorCodec } from "../pagination/cursor.js";
 import {
@@ -30,11 +34,7 @@ export const CompactTicketViewSchema = z
     gid: z.string().regex(/^\d+$/).describe("Numeric Asana task GID"),
     name: z.string().describe("Ticket name"),
     created_at: z.string().datetime().describe("Asana creation timestamp"),
-    completed_at: z
-      .string()
-      .datetime()
-      .nullable()
-      .describe("Asana completion timestamp or null"),
+    completed_at: z.string().datetime().nullable().describe("Asana completion timestamp or null"),
   })
   .strict();
 
@@ -44,14 +44,8 @@ export const ListTicketsOutputSchema = ProvenanceSchema.extend({
     .string()
     .nullable()
     .describe("Opaque cursor for the next page, or null when no continuation is available"),
-  has_more: z
-    .boolean()
-    .describe("Whether more source records may be available after this page"),
-  scanned_count: z
-    .number()
-    .int()
-    .nonnegative()
-    .describe("Number of raw Teamspace tasks examined"),
+  has_more: z.boolean().describe("Whether more source records may be available after this page"),
+  scanned_count: z.number().int().nonnegative().describe("Number of raw Teamspace tasks examined"),
   truncated: z
     .boolean()
     .describe("True when the safety scan bound stopped filtering before source exhaustion"),
@@ -67,23 +61,23 @@ export const SearchTicketsOutputSchema = ProvenanceSchema.extend({
 });
 
 export type ListTicketsInput = {
-  readonly cursor?: string;
+  readonly cursor?: string | undefined;
   readonly limit: number;
-  readonly completed?: boolean;
-  readonly type?: string;
-  readonly label?: string;
-  readonly assignee?: string;
-  readonly release?: string;
+  readonly completed?: boolean | undefined;
+  readonly type?: string | undefined;
+  readonly label?: string | undefined;
+  readonly assignee?: string | undefined;
+  readonly release?: string | undefined;
 };
 
 export type SearchTicketsInput = {
-  readonly text?: string;
-  readonly assignee?: string;
-  readonly completed?: boolean;
-  readonly "due_on.before"?: string;
-  readonly "due_on.after"?: string;
-  readonly "completed_on.before"?: string;
-  readonly "completed_on.after"?: string;
+  readonly text?: string | undefined;
+  readonly assignee?: string | undefined;
+  readonly completed?: boolean | undefined;
+  readonly "due_on.before"?: string | undefined;
+  readonly "due_on.after"?: string | undefined;
+  readonly "completed_on.before"?: string | undefined;
+  readonly "completed_on.after"?: string | undefined;
   readonly compact: boolean;
   readonly limit: number;
 };
@@ -150,6 +144,13 @@ const listCursorCodec = createCursorCodec<ListCursorBinding>({
     "The list_tickets cursor is invalid. Restart without a cursor using the same filters and limit.",
 });
 
+function ensureHttpResult(result: unknown): AsanaHttpResult {
+  if (typeof result === "object" && result !== null && "response" in result && "data" in result) {
+    return result as AsanaHttpResult;
+  }
+  throw new CommandError("asana_api_error", "Unexpected paginated response shape from Asana");
+}
+
 function domainError(
   code: "schema_drift" | "schema_incompatible",
   message: string,
@@ -160,11 +161,7 @@ function domainError(
   });
 }
 
-function isCommandTicket(
-  task: Task,
-  snapshot: DiscoveryResult,
-  trace: AsanaRequestTrace,
-): boolean {
+function isCommandTicket(task: Task, snapshot: DiscoveryResult, trace: AsanaRequestTrace): boolean {
   if (task.resource_subtype === undefined || task.custom_type === undefined) {
     throw domainError("schema_drift", "Asana task response omitted ticket identity fields", trace);
   }
@@ -223,6 +220,39 @@ function hasProject(task: Task, projectGid: string, trace: AsanaRequestTrace): b
   return task.projects.some((project) => project.gid === projectGid);
 }
 
+function requireListFilterFields(
+  task: Task,
+  input: ListTicketsInput,
+  snapshot: DiscoveryResult,
+  trace: AsanaRequestTrace,
+): void {
+  if (input.assignee !== undefined && task.assignee === undefined) {
+    throw domainError("schema_drift", "Asana task response omitted the assignee", trace);
+  }
+  if (input.type === undefined && input.label === undefined) {
+    return;
+  }
+  if (task.custom_fields === undefined) {
+    throw domainError("schema_drift", "Asana task response omitted custom fields", trace);
+  }
+  if (input.type !== undefined && snapshot.ticket_type_field !== null) {
+    const field = task.custom_fields.find(
+      (candidate) => candidate.gid === snapshot.ticket_type_field?.gid,
+    );
+    if (field === undefined || field.enum_value === undefined) {
+      throw domainError("schema_drift", "Asana task response omitted the ticket type value", trace);
+    }
+  }
+  if (input.label !== undefined) {
+    const field = task.custom_fields.find(
+      (candidate) => candidate.gid === snapshot.labels_field.gid,
+    );
+    if (field === undefined || field.multi_enum_values === undefined) {
+      throw domainError("schema_drift", "Asana task response omitted the Labels value", trace);
+    }
+  }
+}
+
 function listBinding(input: ListTicketsInput, snapshot: DiscoveryResult): ListCursorBinding {
   return {
     teamspaceId: snapshot.teamspace.gid,
@@ -272,6 +302,7 @@ export function createTicketListingService(
       input.cursor === undefined ? undefined : listCursorCodec.decode(input.cursor, binding).offset;
     const trace = executor.createTrace();
     const budget = createScanBudget(maxScanTasks);
+    const labelFilter = input.label;
 
     const scan = await scanPages({
       ...(startOffset === undefined ? {} : { startOffset }),
@@ -282,12 +313,14 @@ export function createTicketListingService(
           TaskSchema,
           { deadlineMs },
           async (resources) =>
-            resources.tasks.getTasksForProjectWithHttpInfo(snapshot.teamspace.gid, {
-              completed_since: ALL_COMPLETED_TASKS_SINCE,
-              limit: pageSize,
-              ...(offset === undefined ? {} : { offset }),
-              opt_fields: FULL_TASK_FIELDS,
-            }),
+            ensureHttpResult(
+              await resources.tasks.getTasksForProjectWithHttpInfo(snapshot.teamspace.gid, {
+                completed_since: ALL_COMPLETED_TASKS_SINCE,
+                limit: pageSize,
+                ...(offset === undefined ? {} : { offset }),
+                opt_fields: FULL_TASK_FIELDS,
+              }),
+            ),
           trace,
         );
         return {
@@ -299,6 +332,7 @@ export function createTicketListingService(
         if (!isCommandTicket(task, snapshot, trace)) {
           return undefined;
         }
+        requireListFilterFields(task, input, snapshot, trace);
         const ticket = projectTicket(task, snapshot, trace);
         if (input.completed !== undefined && ticket.completed !== input.completed) {
           return undefined;
@@ -310,8 +344,8 @@ export function createTicketListingService(
           return undefined;
         }
         if (
-          input.label !== undefined &&
-          !ticket.labels.some((label) => normalizedEquals(label, input.label as string))
+          labelFilter !== undefined &&
+          !ticket.labels.some((label) => normalizedEquals(label, labelFilter))
         ) {
           return undefined;
         }
@@ -368,9 +402,7 @@ export function createTicketListingService(
         ...(input["due_on.before"] === undefined
           ? {}
           : { "due_on.before": input["due_on.before"] }),
-        ...(input["due_on.after"] === undefined
-          ? {}
-          : { "due_on.after": input["due_on.after"] }),
+        ...(input["due_on.after"] === undefined ? {} : { "due_on.after": input["due_on.after"] }),
         ...(input["completed_on.before"] === undefined
           ? {}
           : { "completed_on.before": input["completed_on.before"] }),
@@ -391,9 +423,11 @@ export function createTicketListingService(
         TaskSchema,
         { deadlineMs },
         async (resources) =>
-          resources.tasks.searchTasksForWorkspaceWithHttpInfo(
-            snapshot.workspace.gid,
-            searchOptions,
+          ensureHttpResult(
+            await resources.tasks.searchTasksForWorkspaceWithHttpInfo(
+              snapshot.workspace.gid,
+              searchOptions,
+            ),
           ),
         trace,
       );
@@ -405,8 +439,7 @@ export function createTicketListingService(
           break;
         }
         const createdMs = Date.parse(task.created_at);
-        pageNewestMs =
-          pageNewestMs === undefined ? createdMs : Math.max(pageNewestMs, createdMs);
+        pageNewestMs = pageNewestMs === undefined ? createdMs : Math.max(pageNewestMs, createdMs);
         if (seenGids.has(task.gid)) {
           continue;
         }
@@ -427,8 +460,7 @@ export function createTicketListingService(
       }
 
       const boundaryAdvanced =
-        pageNewestMs !== undefined &&
-        (newestSeenMs === undefined || pageNewestMs > newestSeenMs);
+        pageNewestMs !== undefined && (newestSeenMs === undefined || pageNewestMs > newestSeenMs);
       if (pageNewestMs !== undefined) {
         if (boundaryAdvanced) {
           newestSeenMs = pageNewestMs;

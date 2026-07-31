@@ -8,10 +8,7 @@ import {
   withTicketId,
 } from "../ticket_inputs.js";
 import { defineTeamspaceScopedTool } from "../tool_registry.js";
-import {
-  ListTicketsOutputSchema,
-  SearchTicketsOutputSchema,
-} from "../tools/ticket_listing.js";
+import { ListTicketsOutputSchema, SearchTicketsOutputSchema } from "../tools/ticket_listing.js";
 import {
   CreateTicketOutputSchema,
   CreateTicketProtocolOutputSchema,

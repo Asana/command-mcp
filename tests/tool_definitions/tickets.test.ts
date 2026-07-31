@@ -73,9 +73,7 @@ function ticketService(overrides: Partial<TicketService> = {}): TicketService {
   };
 }
 
-function ticketListingService(
-  overrides: Partial<TicketListingService> = {},
-): TicketListingService {
+function ticketListingService(overrides: Partial<TicketListingService> = {}): TicketListingService {
   return {
     listTickets: async () => unexpectedCall("TicketListingService.listTickets"),
     searchTickets: async () => unexpectedCall("TicketListingService.searchTickets"),
@@ -153,9 +151,7 @@ describe("ticket tool definitions", () => {
     expect(ListTicketsInputSchema.parse({ teamspace_id: TEAMSPACE_ID })).toMatchObject({
       limit: 50,
     });
-    expect(
-      SearchTicketsInputSchema.parse({ teamspace_id: TEAMSPACE_ID }),
-    ).toMatchObject({
+    expect(SearchTicketsInputSchema.parse({ teamspace_id: TEAMSPACE_ID })).toMatchObject({
       compact: false,
       limit: 50,
     });
@@ -214,10 +210,7 @@ describe("ticket tool definitions", () => {
       services: createTestContainer(state, { ticketListing }),
     };
 
-    const result = await findTool("list_tickets").execute(
-      { teamspace_id: TEAMSPACE_ID },
-      context,
-    );
+    const result = await findTool("list_tickets").execute({ teamspace_id: TEAMSPACE_ID }, context);
     expect(state.discoverCalls).toBe(1);
     expect(ListTicketsOutputSchema.parse(result)).toEqual(result);
   });
