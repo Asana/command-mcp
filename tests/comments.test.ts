@@ -87,11 +87,7 @@ function singleResult(data: unknown, requestId?: string): AsanaHttpResult {
   };
 }
 
-function pageResult(
-  data: unknown[],
-  nextOffset?: string,
-  requestId?: string,
-): AsanaHttpResult {
+function pageResult(data: unknown[], nextOffset?: string, requestId?: string): AsanaHttpResult {
   return {
     response: { headers: requestId === undefined ? {} : { "x-asana-request-id": requestId } },
     data: {
@@ -183,9 +179,7 @@ function task(gid: string = TICKET_GID): Task {
   };
 }
 
-function ticketService(
-  resolve: TicketService["resolve"] = async () => task(),
-): TicketService {
+function ticketService(resolve: TicketService["resolve"] = async () => task()): TicketService {
   return {
     resolve,
     readByGid: async () => unexpectedCall("TicketService.readByGid"),
@@ -216,10 +210,7 @@ function requiredCursor(output: { cursor: string | null }): string {
 describe("get comments", () => {
   it("filters system stories while counting every raw story scanned", async () => {
     const calls: Array<{ taskGid: string; options: Record<string, unknown> }> = [];
-    const getStories: StoriesApi["getStoriesForTaskWithHttpInfo"] = async (
-      taskGid,
-      options,
-    ) => {
+    const getStories: StoriesApi["getStoriesForTaskWithHttpInfo"] = async (taskGid, options) => {
       calls.push({ taskGid, options: options ?? {} });
       if (options?.offset === undefined) {
         return pageResult(
@@ -290,10 +281,7 @@ describe("get comments", () => {
 
   it("caps returned comments and resumes from its opaque cursor", async () => {
     const offsets: Array<string | undefined> = [];
-    const getStories: StoriesApi["getStoriesForTaskWithHttpInfo"] = async (
-      _taskGid,
-      options,
-    ) => {
+    const getStories: StoriesApi["getStoriesForTaskWithHttpInfo"] = async (_taskGid, options) => {
       offsets.push(options?.offset);
       return options?.offset === undefined
         ? pageResult([story("1800000000000020")], "second-page")
@@ -501,11 +489,7 @@ describe("add comment", () => {
     );
 
     await expect(
-      service.addComment(
-        { ticketId: TICKET_GID, text: "Plain comment" },
-        snapshot(),
-        DEADLINE_MS,
-      ),
+      service.addComment({ ticketId: TICKET_GID, text: "Plain comment" }, snapshot(), DEADLINE_MS),
     ).rejects.toMatchObject({
       code: "asana_api_error",
       details: {

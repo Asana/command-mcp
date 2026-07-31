@@ -1,10 +1,5 @@
 import { z } from "zod";
-import {
-  COMMENT_STORY_FIELDS,
-  GidSchema,
-  type Story,
-  StorySchema,
-} from "../asana_contracts.js";
+import { COMMENT_STORY_FIELDS, GidSchema, type Story, StorySchema } from "../asana_contracts.js";
 import type {
   AsanaHttpResult,
   AsanaRequestExecutorPort,
@@ -18,10 +13,7 @@ import {
 } from "../mutation_envelope.js";
 import { createCursorCodec } from "../pagination/cursor.js";
 import { createScanBudget, scanPages } from "../pagination/scanner.js";
-import {
-  type DiscoveryResult,
-  discoveryToProvenance,
-} from "../schema_discovery.js";
+import { type DiscoveryResult, discoveryToProvenance } from "../schema_discovery.js";
 import { ProvenanceSchema } from "../teamspace_identity.js";
 import type { TicketService } from "./tickets.js";
 
@@ -47,9 +39,7 @@ export const CommentViewSchema = z
       .datetime()
       .nullable()
       .describe("Comment creation timestamp or null when unavailable"),
-    author: CommentAuthorViewSchema.nullable().describe(
-      "Comment author or null when unavailable",
-    ),
+    author: CommentAuthorViewSchema.nullable().describe("Comment author or null when unavailable"),
   })
   .strict();
 
@@ -58,9 +48,7 @@ export const GetCommentsOutputSchema = ProvenanceSchema.extend({
   cursor: z.string().nullable().describe("Opaque cursor for the next page"),
   has_more: z.boolean().describe("Whether more source stories may be available"),
   scanned_count: z.number().int().nonnegative().describe("Raw ticket stories scanned"),
-  truncated: z
-    .boolean()
-    .describe("True when the story scan safety bound was reached"),
+  truncated: z.boolean().describe("True when the story scan safety bound was reached"),
 });
 
 const AddCommentDataSchema = z
@@ -127,7 +115,10 @@ function ensureHttpResult(result: unknown): AsanaHttpResult {
   if (typeof result === "object" && result !== null && "response" in result && "data" in result) {
     return result as AsanaHttpResult;
   }
-  throw new CommandError("asana_api_error", "Unexpected story collection response shape from Asana");
+  throw new CommandError(
+    "asana_api_error",
+    "Unexpected story collection response shape from Asana",
+  );
 }
 
 function projectComment(story: Story, trace: AsanaRequestTrace): CommentView {
@@ -231,9 +222,7 @@ export function createCommentService(
         };
       },
       visit: (story) =>
-        story.resource_subtype === "comment_added"
-          ? projectComment(story, trace)
-          : undefined,
+        story.resource_subtype === "comment_added" ? projectComment(story, trace) : undefined,
     });
 
     return GetCommentsOutputSchema.parse({

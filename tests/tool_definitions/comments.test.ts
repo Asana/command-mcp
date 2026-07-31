@@ -6,10 +6,7 @@ import {
 } from "../../src/tool_definitions/comments.js";
 import type { CallContext, ToolDefinition } from "../../src/tool_registry.js";
 import type { CommentService } from "../../src/tools/comments.js";
-import {
-  AddCommentOutputSchema,
-  GetCommentsOutputSchema,
-} from "../../src/tools/comments.js";
+import { AddCommentOutputSchema, GetCommentsOutputSchema } from "../../src/tools/comments.js";
 import {
   buildDiscoverySnapshot,
   createDiscoveryState,
