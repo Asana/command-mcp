@@ -200,7 +200,7 @@ describe("create ticket mutation", () => {
   it.each([
     [{ name: "New ticket", type: "Unknown" }, "type"],
     [{ name: "New ticket", labels: ["Unknown"] }, "label"],
-  ] as const)("rejects an unknown %s before creating a task", async (fields) => {
+  ])("rejects an unknown option before creating a task", async (fields, _kind) => {
     const observed = state();
     let creates = 0;
     const service = createTicketService(
@@ -213,6 +213,7 @@ describe("create ticket mutation", () => {
         }),
         observed,
       ),
+      { clock: () => 1_000 },
     );
 
     await expect(service.createTicket(fields, snapshot(), DEADLINE_MS)).rejects.toMatchObject({
@@ -403,6 +404,7 @@ describe("create ticket mutation", () => {
         }),
         observed,
       ),
+      { clock: () => 1_000 },
     );
 
     await expect(
@@ -517,7 +519,7 @@ describe("update ticket mutation", () => {
     [{ set: ["Urgent"] }, [URGENT_GID]],
     [{ set: [] }, []],
     [{ add: ["Urgent"], remove: ["Customer"] }, [URGENT_GID]],
-  ] as const)("maps label update %j to the complete multi-enum value", async (labels, expected) => {
+  ])("maps label update %j to the complete multi-enum value", async (labels, expected) => {
     const discovered = snapshot();
     const observed = state();
     const writes: unknown[] = [];
