@@ -43,8 +43,7 @@ describe("ticket tool definitions", () => {
       {
         name: "read_ticket",
         title: "Read ticket",
-        description:
-          "Read one Command ticket by Asana GID, Command short ID, or Asana task URL.",
+        description: "Read one Command ticket by Asana GID, Command short ID, or Asana task URL.",
       },
     ]);
     expect(findTool("read_ticket").annotations).toEqual({

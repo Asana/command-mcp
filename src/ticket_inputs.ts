@@ -4,9 +4,7 @@ export const TicketIdentifierSchema = z
   .string()
   .trim()
   .min(1, "Ticket identifier is required")
-  .describe(
-    "An Asana task GID, a Command short ID such as ABC-42, or an Asana task URL",
-  );
+  .describe("An Asana task GID, a Command short ID such as ABC-42, or an Asana task URL");
 
 function isRealCalendarDate(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -17,20 +15,7 @@ function isRealCalendarDate(value: string): boolean {
   const month = Number(match[2]);
   const day = Number(match[3]);
   const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const daysInMonth = [
-    31,
-    leapYear ? 29 : 28,
-    31,
-    30,
-    31,
-    30,
-    31,
-    31,
-    30,
-    31,
-    30,
-    31,
-  ];
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   const maximumDay = daysInMonth[month - 1];
   return maximumDay !== undefined && day >= 1 && day <= maximumDay;
 }

@@ -1,10 +1,10 @@
+import { TeamspaceIdentifierSchema } from "../teamspace_identity.js";
+import { withTicketId } from "../ticket_inputs.js";
 import { ReadTicketOutputSchema } from "../tickets.js";
-import { withTeamspaceId } from "../teamspace_identity.js";
-import { TicketIdentifierSchema } from "../ticket_inputs.js";
 import { defineTeamspaceScopedTool } from "../tool_registry.js";
 
-const ReadTicketInputSchema = withTeamspaceId({
-  ticket_id: TicketIdentifierSchema,
+const ReadTicketInputSchema = withTicketId({
+  teamspace_id: TeamspaceIdentifierSchema,
 });
 
 const readTicket = defineTeamspaceScopedTool({

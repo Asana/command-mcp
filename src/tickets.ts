@@ -1,20 +1,9 @@
 import { z } from "zod";
-import {
-  FULL_TASK_FIELDS,
-  GidSchema,
-  type Task,
-  TaskSchema,
-} from "./asana_contracts.js";
-import type {
-  AsanaRequestExecutorPort,
-  AsanaRequestTrace,
-} from "./asana_gateway.js";
+import { FULL_TASK_FIELDS, GidSchema, type Task, TaskSchema } from "./asana_contracts.js";
+import type { AsanaRequestExecutorPort, AsanaRequestTrace } from "./asana_gateway.js";
 import { tryParseAsanaAppUrl } from "./asana_url.js";
 import { CommandError } from "./errors.js";
-import {
-  type DiscoveryResult,
-  discoveryToProvenance,
-} from "./schema_discovery.js";
+import { type DiscoveryResult, discoveryToProvenance } from "./schema_discovery.js";
 import { ProvenanceSchema } from "./teamspace_identity.js";
 import { DateOnlySchema, TicketIdentifierSchema } from "./ticket_inputs.js";
 
@@ -52,9 +41,7 @@ export const TicketViewSchema = z.object({
   assignee: AssigneeViewSchema.nullable().describe("Assigned Asana user or null"),
   due_on: DateOnlySchema.nullable().describe("Due date or null"),
   predicted_start_on: DateOnlySchema.nullable().describe("Predicted start date or null"),
-  predicted_completion_on: DateOnlySchema.nullable().describe(
-    "Predicted completion date or null",
-  ),
+  predicted_completion_on: DateOnlySchema.nullable().describe("Predicted completion date or null"),
   dependencies: z.array(DependencyViewSchema).describe("Tasks blocking this ticket"),
   url: z.string().url().nullable().describe("Canonical Asana task URL or null"),
 });
@@ -100,9 +87,9 @@ function invalidTicketIdentifier(message: string): never {
   });
 }
 
-function parseTicketReference(identifier: string):
-  | { kind: "gid"; gid: string }
-  | { kind: "short_id"; shortId: string } {
+function parseTicketReference(
+  identifier: string,
+): { kind: "gid"; gid: string } | { kind: "short_id"; shortId: string } {
   const parsedIdentifier = TicketIdentifierSchema.safeParse(identifier);
   if (!parsedIdentifier.success) {
     invalidTicketIdentifier("Invalid ticket identifier");
@@ -128,12 +115,22 @@ function parseTicketReference(identifier: string):
   invalidTicketIdentifier("Invalid ticket identifier");
 }
 
-function requireScope(task: Task, snapshot: DiscoveryResult): void {
+function domainError(
+  code: "schema_drift" | "out_of_scope" | "schema_incompatible",
+  message: string,
+  trace: AsanaRequestTrace,
+): CommandError {
+  return new CommandError(code, message, {
+    asanaRequestIds: [...trace.requestIds],
+  });
+}
+
+function requireScope(task: Task, snapshot: DiscoveryResult, trace: AsanaRequestTrace): void {
   if (task.projects === undefined) {
-    throw new CommandError("schema_drift", "Asana task response omitted project membership");
+    throw domainError("schema_drift", "Asana task response omitted project membership", trace);
   }
   if (!task.projects.some((project) => project.gid === snapshot.teamspace.gid)) {
-    throw new CommandError("out_of_scope", "Ticket is outside the selected Teamspace");
+    throw domainError("out_of_scope", "Ticket is outside the selected Teamspace", trace);
   }
 }
 
@@ -141,9 +138,10 @@ function requireTicketIdentity(
   task: Task,
   snapshot: DiscoveryResult,
   allowMissingCustomType: boolean,
+  trace: AsanaRequestTrace,
 ): void {
   if (task.custom_type === undefined || task.resource_subtype === undefined) {
-    throw new CommandError("schema_drift", "Asana task response omitted ticket identity fields");
+    throw domainError("schema_drift", "Asana task response omitted ticket identity fields", trace);
   }
   if (task.custom_type === null && allowMissingCustomType) {
     return;
@@ -153,9 +151,10 @@ function requireTicketIdentity(
     task.custom_type === null ||
     task.custom_type.gid !== snapshot.ticket_custom_type.gid
   ) {
-    throw new CommandError(
+    throw domainError(
       "schema_incompatible",
       "Task is not a Command ticket for the selected Teamspace",
+      trace,
     );
   }
 }
@@ -243,18 +242,15 @@ export function createTicketService(executor: AsanaRequestExecutorPort): TicketS
         TicketLookupSchema,
         { deadlineMs },
         async (resources) =>
-          resources.tasks.getTaskForCustomIDWithHttpInfo(
-            snapshot.workspace.gid,
-            reference.shortId,
-          ),
+          resources.tasks.getTaskForCustomIDWithHttpInfo(snapshot.workspace.gid, reference.shortId),
         trace,
       );
       gid = lookup.gid;
     }
 
     const task = await readByGid(gid, deadlineMs, trace);
-    requireScope(task, snapshot);
-    requireTicketIdentity(task, snapshot, options.allowMissingCustomType ?? false);
+    requireScope(task, snapshot, trace);
+    requireTicketIdentity(task, snapshot, options.allowMissingCustomType ?? false, trace);
     return task;
   }
 
@@ -263,11 +259,28 @@ export function createTicketService(executor: AsanaRequestExecutorPort): TicketS
     snapshot: DiscoveryResult,
     deadlineMs: number,
   ): Promise<ReadTicketOutput> {
-    const ticket = await resolve(identifier, snapshot, deadlineMs);
-    return ReadTicketOutputSchema.parse({
-      ...discoveryToProvenance(snapshot),
-      ticket: projectTicketView(ticket, snapshot),
-    });
+    const trace = executor.createTrace();
+    const ticket = await resolve(identifier, snapshot, deadlineMs, { trace });
+    try {
+      return ReadTicketOutputSchema.parse({
+        ...discoveryToProvenance(snapshot),
+        ticket: projectTicketView(ticket, snapshot),
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        throw new CommandError("schema_drift", "Ticket view did not match its contract", {
+          details: {
+            issues: error.issues.map((issue) => ({
+              path: issue.path,
+              code: issue.code,
+            })),
+          },
+          asanaRequestIds: [...trace.requestIds],
+          cause: error,
+        });
+      }
+      throw error;
+    }
   }
 
   return { resolve, readByGid, readTicket };

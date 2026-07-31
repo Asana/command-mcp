@@ -19,11 +19,7 @@ import type {
 } from "../src/asana_gateway.js";
 import type { DiscoveryResult } from "../src/schema_discovery.js";
 import { createTicketService, projectTicketView, TicketViewSchema } from "../src/tickets.js";
-import {
-  buildDiscoverySnapshot,
-  DEADLINE_MS,
-  TEAMSPACE_ID,
-} from "./helpers/tool_test_helpers.js";
+import { buildDiscoverySnapshot, DEADLINE_MS, TEAMSPACE_ID } from "./helpers/tool_test_helpers.js";
 
 const TICKET_GID = "1700000000000001";
 
@@ -81,10 +77,11 @@ function singleResult(data: unknown): AsanaHttpResult {
 function createExecutor(
   resources: AsanaResourceBundle,
   traces: AsanaRequestTrace[] = [],
+  createdRequestIds: string[] = [],
 ): AsanaRequestExecutorPort {
   return {
     createTrace: () => {
-      const trace = { requestIds: [] };
+      const trace = { requestIds: [...createdRequestIds] };
       traces.push(trace);
       return trace;
     },
@@ -181,6 +178,7 @@ describe("ticket resolver", () => {
 
   it("rejects a task outside the selected Teamspace", async () => {
     const snapshot = buildDiscoverySnapshot(TEAMSPACE_ID);
+    const trace: AsanaRequestTrace = { requestIds: ["scope-request"] };
     const getTask: TasksApi["getTaskWithHttpInfo"] = async () =>
       singleResult(
         task(snapshot, {
@@ -189,8 +187,11 @@ describe("ticket resolver", () => {
       );
     const service = createTicketService(createExecutor(createResourceBundle({ getTask })));
 
-    await expect(service.resolve(TICKET_GID, snapshot, DEADLINE_MS)).rejects.toMatchObject({
+    await expect(
+      service.resolve(TICKET_GID, snapshot, DEADLINE_MS, { trace }),
+    ).rejects.toMatchObject({
       code: "out_of_scope",
+      asanaRequestIds: ["scope-request"],
     });
   });
 
@@ -207,9 +208,7 @@ describe("ticket resolver", () => {
 
   it("rejects an unparseable identifier before using Asana", async () => {
     const snapshot = buildDiscoverySnapshot(TEAMSPACE_ID);
-    const service = createTicketService(
-      createExecutor(createResourceBundle({}), []),
-    );
+    const service = createTicketService(createExecutor(createResourceBundle({}), []));
 
     await expect(service.resolve("not a ticket", snapshot, DEADLINE_MS)).rejects.toMatchObject({
       code: "invalid_input",
@@ -266,6 +265,20 @@ describe("ticket resolver", () => {
     await service.readByGid(TICKET_GID, DEADLINE_MS, trace);
 
     expect(observedTraces).toContain(trace);
+  });
+
+  it("preserves request IDs when a read cannot be projected safely", async () => {
+    const snapshot = buildDiscoverySnapshot(TEAMSPACE_ID);
+    const getTask: TasksApi["getTaskWithHttpInfo"] = async () =>
+      singleResult(task(snapshot, { due_on: "2026-02-30" }));
+    const service = createTicketService(
+      createExecutor(createResourceBundle({ getTask }), [], ["view-request"]),
+    );
+
+    await expect(service.readTicket(TICKET_GID, snapshot, DEADLINE_MS)).rejects.toMatchObject({
+      code: "schema_drift",
+      asanaRequestIds: ["view-request"],
+    });
   });
 });
 
