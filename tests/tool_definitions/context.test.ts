@@ -10,6 +10,7 @@ import {
   buildDiscoverySnapshot,
   createUnexpectedCommentServiceFake,
   createUnexpectedExecutorFake,
+  createUnexpectedPullRequestServiceFake,
   createUnexpectedTicketServiceFake,
   createUnexpectedWorkflowServiceFake,
   DEADLINE_MS,
@@ -54,6 +55,7 @@ function createServices(options: {
     context: options.context ?? createUnexpectedContextService(),
     schemaDiscovery: options.schemaDiscovery ?? createUnexpectedDiscoveryService(),
     comments: createUnexpectedCommentServiceFake(),
+    pullRequests: createUnexpectedPullRequestServiceFake(),
     tickets: createUnexpectedTicketServiceFake(),
     workflow: createUnexpectedWorkflowServiceFake(),
   };
@@ -271,6 +273,7 @@ describe("context tool definitions", () => {
       context: createContextService(executor),
       schemaDiscovery,
       comments: createUnexpectedCommentServiceFake(),
+      pullRequests: createUnexpectedPullRequestServiceFake(),
       tickets: createUnexpectedTicketServiceFake(),
       workflow: createUnexpectedWorkflowServiceFake(),
     };

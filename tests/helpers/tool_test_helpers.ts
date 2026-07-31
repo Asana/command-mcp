@@ -4,6 +4,7 @@ import type { DiscoveryResult } from "../../src/schema_discovery.js";
 import type { CommandServices } from "../../src/services.js";
 import type { CommentService } from "../../src/tools/comments.js";
 import type { ContextService } from "../../src/tools/context.js";
+import type { PullRequestService } from "../../src/tools/pull_requests.js";
 import type { TicketService } from "../../src/tools/tickets.js";
 import type { WorkflowService } from "../../src/tools/workflow.js";
 
@@ -62,6 +63,12 @@ export function createUnexpectedTicketServiceFake(): TicketService {
     readTicket: async () => unexpectedExecutorCall("TicketService.readTicket"),
     createTicket: async () => unexpectedExecutorCall("TicketService.createTicket"),
     updateTicket: async () => unexpectedExecutorCall("TicketService.updateTicket"),
+  };
+}
+
+export function createUnexpectedPullRequestServiceFake(): PullRequestService {
+  return {
+    getTicketPrs: async () => unexpectedExecutorCall("PullRequestService.getTicketPrs"),
   };
 }
 
@@ -125,6 +132,7 @@ export function createTestContainer(
   state: FakeSchemaDiscoveryState,
   overrides: {
     comments?: CommentService;
+    pullRequests?: PullRequestService;
     tickets?: TicketService;
     workflow?: WorkflowService;
   } = {},
@@ -134,6 +142,7 @@ export function createTestContainer(
     context: createUnexpectedContextServiceFake(),
     schemaDiscovery: createFakeSchemaDiscoveryService(state),
     comments: overrides.comments ?? createUnexpectedCommentServiceFake(),
+    pullRequests: overrides.pullRequests ?? createUnexpectedPullRequestServiceFake(),
     tickets: overrides.tickets ?? createUnexpectedTicketServiceFake(),
     workflow: overrides.workflow ?? createUnexpectedWorkflowServiceFake(),
   };

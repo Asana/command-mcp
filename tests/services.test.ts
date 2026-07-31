@@ -9,6 +9,7 @@ describe("buildServices", () => {
     expect(services.context).toBeDefined();
     expect(services.schemaDiscovery).toBeDefined();
     expect(services.comments).toBeDefined();
+    expect(services.pullRequests).toBeDefined();
     expect(services.tickets).toBeDefined();
     expect(services.workflow).toBeDefined();
     expect(typeof services.context.listWorkspaces).toBe("function");
@@ -17,6 +18,7 @@ describe("buildServices", () => {
     expect(typeof services.schemaDiscovery.discover).toBe("function");
     expect(typeof services.comments.getComments).toBe("function");
     expect(typeof services.comments.addComment).toBe("function");
+    expect(typeof services.pullRequests.getTicketPrs).toBe("function");
     expect(typeof services.tickets.resolve).toBe("function");
     expect(typeof services.tickets.readByGid).toBe("function");
     expect(typeof services.tickets.readTicket).toBe("function");

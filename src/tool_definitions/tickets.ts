@@ -7,6 +7,7 @@ import {
   withTicketId,
 } from "../ticket_inputs.js";
 import { defineTeamspaceScopedTool } from "../tool_registry.js";
+import { GetTicketPullRequestsOutputSchema } from "../tools/pull_requests.js";
 import {
   CreateTicketOutputSchema,
   CreateTicketProtocolOutputSchema,
@@ -28,6 +29,27 @@ const readTicket = defineTeamspaceScopedTool({
   readOnly: true,
   handler: (input, context) =>
     context.services.tickets.readTicket(input.ticket_id, context.schema, context.deadlineMs),
+});
+
+const GetTicketPullRequestsInputSchema = z
+  .object({
+    teamspace_id: TeamspaceIdentifierSchema,
+    ticket_id: TicketIdentifierSchema.describe(
+      "The ticket whose attachments and stories should be scanned for GitHub pull-request URLs",
+    ),
+  })
+  .strict();
+
+const getTicketPullRequests = defineTeamspaceScopedTool({
+  name: "get_ticket_prs",
+  title: "Get ticket pull requests",
+  description:
+    "Best-effort discovery of GitHub pull-request URLs in ticket attachments and stories.",
+  input: GetTicketPullRequestsInputSchema,
+  output: GetTicketPullRequestsOutputSchema,
+  readOnly: true,
+  handler: (input, context) =>
+    context.services.pullRequests.getTicketPrs(input.ticket_id, context.schema, context.deadlineMs),
 });
 
 const CreateTicketInputSchema = CreateTicketFieldsSchema.extend({
@@ -88,4 +110,9 @@ const updateTicket = defineTeamspaceScopedTool({
   },
 });
 
-export const ticketToolDefinitions = [readTicket, createTicket, updateTicket] as const;
+export const ticketToolDefinitions = [
+  readTicket,
+  getTicketPullRequests,
+  createTicket,
+  updateTicket,
+] as const;
