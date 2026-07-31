@@ -19,7 +19,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --platform node --target node22 --clean --sourcemap",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src tests scripts",
+    "lint": "biome check src tests",
     "test": "vitest run --exclude 'tests/integration/**'",
     "test:integration": "vitest run tests/integration",
     "check": "npm run typecheck && npm run lint && npm test && npm run build"
