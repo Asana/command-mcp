@@ -3,10 +3,12 @@ import { GidSchema, WorkspaceSchema } from "./asana_contracts.js";
 import { tryParseAsanaAppUrl } from "./asana_url.js";
 import { CommandError } from "./errors.js";
 
-const TEAMSPACE_PATH_PATTERN = /^\/\d+\/\d+\/project\/\d+\/dev\/space\/(\d+)(?:\/.*)?$/;
+const TEAMSPACE_PATH_PATTERN = /^\/\d+\/\d+\/dev\/space\/(\d+)(?:\/.*)?$/;
 
 export const TeamspaceIdentifierSchema = z
   .string()
+  .trim()
+  .min(1, "Teamspace identifier is required")
   .describe(
     "Numeric Asana project GID for the Teamspace, or an https://app.asana.com/.../dev/space/{id} URL",
   );
@@ -47,11 +49,21 @@ function invalidTeamspaceIdentifier(message: string, issues: unknown[]): never {
 }
 
 export function resolveTeamspaceIdentifier(input: string): string {
-  if (GidSchema.safeParse(input).success) {
-    return input;
+  const trimmed = input.trim();
+  if (trimmed.length === 0) {
+    invalidTeamspaceIdentifier("Invalid Teamspace identifier", [
+      {
+        path: ["teamspace_id"],
+        message: "Teamspace identifier is required",
+      },
+    ]);
   }
 
-  const parsed = tryParseAsanaAppUrl(input);
+  if (GidSchema.safeParse(trimmed).success) {
+    return trimmed;
+  }
+
+  const parsed = tryParseAsanaAppUrl(trimmed);
   if (parsed === null) {
     invalidTeamspaceIdentifier("Invalid Teamspace identifier", [
       {
@@ -66,8 +78,7 @@ export function resolveTeamspaceIdentifier(input: string): string {
     invalidTeamspaceIdentifier("Teamspace URL path is invalid", [
       {
         path: ["teamspace_id"],
-        message:
-          "expected path shape /{app}/{workspace}/project/{project}/dev/space/{teamspace_id}",
+        message: "expected path shape /{app}/{workspace}/dev/space/{teamspace_id}",
       },
     ]);
   }

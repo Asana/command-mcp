@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { tryParseAsanaAppUrl } from "../src/asana_url.js";
 import { CommandError } from "../src/errors.js";
-import { resolveTeamspaceIdentifier } from "../src/teamspace_identity.js";
+import {
+  resolveTeamspaceIdentifier,
+  TeamspaceIdentifierSchema,
+} from "../src/teamspace_identity.js";
+
+const WORKSPACE_GID = "15793206719";
+const TEAMSPACE_ID = "1211850000337894";
+const TEAMSPACE_URL = `https://app.asana.com/1/${WORKSPACE_GID}/dev/space/${TEAMSPACE_ID}`;
+const TEAMSPACE_URL_WITH_TRAILING = `${TEAMSPACE_URL}/development`;
 
 describe("tryParseAsanaAppUrl", () => {
   it("returns null when the input is not a URL", () => {
@@ -10,25 +18,19 @@ describe("tryParseAsanaAppUrl", () => {
   });
 
   it("accepts a valid https app.asana.com URL", () => {
-    const parsed = tryParseAsanaAppUrl(
-      "https://app.asana.com/1/15793206719/project/1211850000337894/dev/space/1211850000337894",
-    );
+    const parsed = tryParseAsanaAppUrl(TEAMSPACE_URL);
     expect(parsed).not.toBeNull();
     expect(parsed?.pathname).toBe(
-      "/1/15793206719/project/1211850000337894/dev/space/1211850000337894",
+      `/${["1", WORKSPACE_GID, "dev", "space", TEAMSPACE_ID].join("/")}`,
     );
   });
 
   it("rejects http URLs", () => {
     expect(() =>
-      tryParseAsanaAppUrl(
-        "http://app.asana.com/1/15793206719/project/1211850000337894/dev/space/1211850000337894",
-      ),
+      tryParseAsanaAppUrl(`http://app.asana.com/1/${WORKSPACE_GID}/dev/space/${TEAMSPACE_ID}`),
     ).toThrow(CommandError);
     try {
-      tryParseAsanaAppUrl(
-        "http://app.asana.com/1/15793206719/project/1211850000337894/dev/space/1211850000337894",
-      );
+      tryParseAsanaAppUrl(`http://app.asana.com/1/${WORKSPACE_GID}/dev/space/${TEAMSPACE_ID}`);
     } catch (error) {
       expect(error).toMatchObject({ code: "invalid_input" });
     }
@@ -36,16 +38,14 @@ describe("tryParseAsanaAppUrl", () => {
 
   it("rejects non-Asana hosts", () => {
     expect(() =>
-      tryParseAsanaAppUrl(
-        "https://example.com/1/15793206719/project/1211850000337894/dev/space/1211850000337894",
-      ),
+      tryParseAsanaAppUrl(`https://example.com/1/${WORKSPACE_GID}/dev/space/${TEAMSPACE_ID}`),
     ).toThrow(CommandError);
   });
 
   it("rejects URLs with an explicit port", () => {
     expect(() =>
       tryParseAsanaAppUrl(
-        "https://app.asana.com:8443/1/15793206719/project/1211850000337894/dev/space/1211850000337894",
+        `https://app.asana.com:8443/1/${WORKSPACE_GID}/dev/space/${TEAMSPACE_ID}`,
       ),
     ).toThrow(CommandError);
   });
@@ -53,34 +53,43 @@ describe("tryParseAsanaAppUrl", () => {
   it("rejects URLs with credentials", () => {
     expect(() =>
       tryParseAsanaAppUrl(
-        "https://user:pass@app.asana.com/1/15793206719/project/1211850000337894/dev/space/1211850000337894",
+        `https://user:pass@app.asana.com/1/${WORKSPACE_GID}/dev/space/${TEAMSPACE_ID}`,
       ),
     ).toThrow(CommandError);
   });
 });
 
+describe("TeamspaceIdentifierSchema", () => {
+  it("rejects empty and whitespace-only identifiers", () => {
+    expect(TeamspaceIdentifierSchema.safeParse("").success).toBe(false);
+    expect(TeamspaceIdentifierSchema.safeParse("   ").success).toBe(false);
+  });
+
+  it("trims surrounding whitespace before validation", () => {
+    expect(TeamspaceIdentifierSchema.parse(` ${TEAMSPACE_ID} `)).toBe(TEAMSPACE_ID);
+  });
+});
+
 describe("resolveTeamspaceIdentifier", () => {
-  const teamspaceUrl =
-    "https://app.asana.com/1/15793206719/project/1211850000337894/dev/space/1211850000337894";
-  const teamspaceId = "1211850000337894";
-
   it("accepts a numeric ID unchanged", () => {
-    expect(resolveTeamspaceIdentifier(teamspaceId)).toBe(teamspaceId);
+    expect(resolveTeamspaceIdentifier(TEAMSPACE_ID)).toBe(TEAMSPACE_ID);
   });
 
-  it("canonicalizes a valid Teamspace URL", () => {
-    expect(resolveTeamspaceIdentifier(teamspaceUrl)).toBe(teamspaceId);
+  it("trims surrounding whitespace from numeric IDs", () => {
+    expect(resolveTeamspaceIdentifier(` ${TEAMSPACE_ID} `)).toBe(TEAMSPACE_ID);
   });
 
-  it("tolerates trailing path segments on a Teamspace URL", () => {
-    expect(resolveTeamspaceIdentifier(`${teamspaceUrl}/list/123`)).toBe(teamspaceId);
+  it("canonicalizes a valid Teamspace URL without trailing segments", () => {
+    expect(resolveTeamspaceIdentifier(TEAMSPACE_URL)).toBe(TEAMSPACE_ID);
+  });
+
+  it("canonicalizes a valid Teamspace URL with trailing path segments", () => {
+    expect(resolveTeamspaceIdentifier(TEAMSPACE_URL_WITH_TRAILING)).toBe(TEAMSPACE_ID);
   });
 
   it("rejects a URL whose path lacks the dev space segments", () => {
     expect(() =>
-      resolveTeamspaceIdentifier(
-        "https://app.asana.com/1/15793206719/project/1211850000337894/list",
-      ),
+      resolveTeamspaceIdentifier(`https://app.asana.com/1/${WORKSPACE_GID}/list`),
     ).toThrow(CommandError);
   });
 

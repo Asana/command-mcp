@@ -255,7 +255,7 @@ function completeTeamspaceState(
       gid: TEAMSPACE_ID,
       name: "Command Teamspace",
       workspace: WORKSPACE,
-      permalink_url: `https://app.asana.com/1/${WORKSPACE.gid}/project/${TEAMSPACE_ID}/dev/space/${TEAMSPACE_ID}`,
+      permalink_url: `https://app.asana.com/1/${WORKSPACE.gid}/dev/space/${TEAMSPACE_ID}`,
       custom_fields:
         overrides.projectCustomFields ?? fieldDefinitions.map((entry) => entry.custom_field),
     },
@@ -412,6 +412,108 @@ describe("discoverTeamspaceSchema", () => {
     );
 
     expect(discovery.labels_field.enum_options).toEqual([{ gid: "1200000000000101", name: "Bug" }]);
+  });
+
+  it("uses multi_enum_options when enum_options is an empty array on a multi_enum field", async () => {
+    const state = completeTeamspaceState({
+      customFieldSettings: [
+        { custom_field: shortIdField() },
+        {
+          custom_field: labelsField({
+            enum_options: [],
+            multi_enum_options: [
+              { gid: "1200000000000101", name: "Bug", enabled: true },
+              { gid: "1200000000000102", name: "Feature", enabled: true },
+            ],
+          }),
+        },
+        { custom_field: releasesField([]) },
+        { custom_field: predictedStartField() },
+        { custom_field: predictedCompletionField() },
+        { custom_field: ticketTypeField() },
+      ],
+      projectCustomFields: [
+        shortIdField(),
+        labelsField({
+          enum_options: [],
+          multi_enum_options: [
+            { gid: "1200000000000101", name: "Bug", enabled: true },
+            { gid: "1200000000000102", name: "Feature", enabled: true },
+          ],
+        }),
+        releasesField([]),
+        predictedStartField(),
+        predictedCompletionField(),
+        ticketTypeField(),
+      ],
+    });
+
+    const discovery = await discoverTeamspaceSchema(
+      createFakeExecutor(state),
+      TEAMSPACE_ID,
+      requestOptions,
+    );
+
+    expect(discovery.labels_field.enum_options).toEqual([
+      { gid: "1200000000000101", name: "Bug" },
+      { gid: "1200000000000102", name: "Feature" },
+    ]);
+  });
+
+  it("does not treat an enum superset as the ticket type field", async () => {
+    const state = completeTeamspaceState({
+      customFieldSettings: [
+        { custom_field: shortIdField() },
+        { custom_field: labelsField() },
+        { custom_field: releasesField([]) },
+        { custom_field: predictedStartField() },
+        { custom_field: predictedCompletionField() },
+        {
+          custom_field: {
+            gid: "1200000000000099",
+            name: "Priority",
+            resource_subtype: "enum",
+            type: "enum",
+            enum_options: [
+              { gid: "1200000000000301", name: "Feature", enabled: true },
+              { gid: "1200000000000302", name: "Bug", enabled: true },
+              { gid: "1200000000000303", name: "Task", enabled: true },
+              { gid: "1200000000000304", name: "Chore", enabled: true },
+            ],
+          },
+        },
+      ],
+      projectCustomFields: [
+        shortIdField(),
+        labelsField(),
+        releasesField([]),
+        predictedStartField(),
+        predictedCompletionField(),
+        {
+          gid: "1200000000000099",
+          name: "Priority",
+          resource_subtype: "enum",
+          type: "enum",
+          enum_options: [
+            { gid: "1200000000000301", name: "Feature", enabled: true },
+            { gid: "1200000000000302", name: "Bug", enabled: true },
+            { gid: "1200000000000303", name: "Task", enabled: true },
+            { gid: "1200000000000304", name: "Chore", enabled: true },
+          ],
+        },
+      ],
+    });
+
+    const discovery = await discoverTeamspaceSchema(
+      createFakeExecutor(state),
+      TEAMSPACE_ID,
+      requestOptions,
+    );
+
+    expect(discovery.ticket_type_field).toBeNull();
+    expect(discovery.warnings).toContain(
+      "Ticket type field was not found; type reads return null and type filters and type mutations are unavailable.",
+    );
   });
 });
 

@@ -124,7 +124,12 @@ const ReleaseProjectSchema = z.object({
 type Candidate = { gid: string; name: string };
 
 function enabledOptions(field: CustomField): EnumOption[] {
-  const options = field.enum_options ?? field.multi_enum_options ?? [];
+  const options =
+    field.resource_subtype === "multi_enum"
+      ? (field.multi_enum_options ?? [])
+      : field.resource_subtype === "enum"
+        ? (field.enum_options ?? [])
+        : [];
   return options.filter((option) => option.enabled !== false);
 }
 
@@ -172,7 +177,11 @@ function requireExactlyOne<T>(matches: T[], role: string, toCandidate: (match: T
   if (matches.length > 1) {
     schemaAmbiguous(`Multiple ${role} fields found`, matches.map(toCandidate));
   }
-  return matches[0] as T;
+  const [match] = matches;
+  if (match === undefined) {
+    schemaIncompatible(`No ${role} found`);
+  }
+  return match;
 }
 
 function resolveTicketCustomType(customTypes: CustomType[]): CustomType {
@@ -180,10 +189,18 @@ function resolveTicketCustomType(customTypes: CustomType[]): CustomType {
     (customType) => normalizeName(customType.name) === "dev ticket",
   );
   if (devTicketMatches.length === 1) {
-    return devTicketMatches[0] as CustomType;
+    const [match] = devTicketMatches;
+    if (match === undefined) {
+      schemaIncompatible("No ticket custom type found");
+    }
+    return match;
   }
   if (customTypes.length === 1) {
-    return customTypes[0] as CustomType;
+    const [match] = customTypes;
+    if (match === undefined) {
+      schemaIncompatible("No ticket custom type found");
+    }
+    return match;
   }
   if (customTypes.length === 0) {
     schemaIncompatible("No ticket custom type found");
@@ -222,7 +239,10 @@ function matchesTicketTypeFallback(field: CustomField): boolean {
     return false;
   }
   const enabledNames = new Set(enabledOptions(field).map((option) => normalizeName(option.name)));
-  return TICKET_TYPE_OPTION_NAMES.every((name) => enabledNames.has(name));
+  return (
+    enabledNames.size === TICKET_TYPE_OPTION_NAMES.length &&
+    TICKET_TYPE_OPTION_NAMES.every((name) => enabledNames.has(name))
+  );
 }
 
 function resolveFieldByStrategies(
@@ -562,7 +582,17 @@ export function resolveEnumOptionName(field: FieldDefinition, optionName: string
   const matches = field.enum_options.filter((option) => normalizeName(option.name) === normalized);
 
   if (matches.length === 1) {
-    return matches[0] as FieldOption;
+    const [match] = matches;
+    if (match === undefined) {
+      throw new CommandError("invalid_input", "Unknown enum option", {
+        details: {
+          field_gid: field.gid,
+          field_name: field.name,
+          allowed_option_names: field.enum_options.map((option) => option.name),
+        },
+      });
+    }
+    return match;
   }
 
   const allowedNames = field.enum_options.map((option) => option.name);
