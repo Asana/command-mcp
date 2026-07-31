@@ -1,8 +1,9 @@
 import type { AsanaRequestExecutorPort } from "../../src/asana_gateway.js";
 import type { Config } from "../../src/config.js";
-import type { ContextService } from "../../src/context.js";
 import type { DiscoveryResult } from "../../src/schema_discovery.js";
 import type { CommandServices } from "../../src/services.js";
+import type { ContextService } from "../../src/tools/context.js";
+import type { TicketService } from "../../src/tools/tickets.js";
 
 export const CONFIG: Config = {
   accessToken: "test-token",
@@ -42,6 +43,14 @@ export function createUnexpectedContextServiceFake(): ContextService {
     listWorkspaces: async () => unexpectedExecutorCall("ContextService.listWorkspaces"),
     findTeamspaces: async () => unexpectedExecutorCall("ContextService.findTeamspaces"),
     getContext: () => unexpectedExecutorCall("ContextService.getContext"),
+  };
+}
+
+export function createUnexpectedTicketServiceFake(): TicketService {
+  return {
+    resolve: async () => unexpectedExecutorCall("TicketService.resolve"),
+    readByGid: async () => unexpectedExecutorCall("TicketService.readByGid"),
+    readTicket: async () => unexpectedExecutorCall("TicketService.readTicket"),
   };
 }
 
@@ -94,11 +103,15 @@ export function createFakeSchemaDiscoveryService(state: FakeSchemaDiscoveryState
   };
 }
 
-export function createTestContainer(state: FakeSchemaDiscoveryState): CommandServices {
+export function createTestContainer(
+  state: FakeSchemaDiscoveryState,
+  overrides: { tickets?: TicketService } = {},
+): CommandServices {
   return {
     executor: createUnexpectedExecutorFake(),
     context: createUnexpectedContextServiceFake(),
     schemaDiscovery: createFakeSchemaDiscoveryService(state),
+    tickets: overrides.tickets ?? createUnexpectedTicketServiceFake(),
   };
 }
 

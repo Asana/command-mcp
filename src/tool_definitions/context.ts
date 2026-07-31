@@ -1,10 +1,5 @@
 import { z } from "zod";
 import { GidSchema } from "../asana_contracts.js";
-import {
-  ContextProjectionSchema,
-  TeamspaceCandidatesSchema,
-  WorkspaceListSchema,
-} from "../context.js";
 import { DiscoveryResultSchema } from "../schema_discovery.js";
 import { withTeamspaceId } from "../teamspace_identity.js";
 import {
@@ -12,6 +7,11 @@ import {
   defineUnscopedTool,
   EMPTY_INPUT_SCHEMA,
 } from "../tool_registry.js";
+import {
+  ContextProjectionSchema,
+  TeamspaceCandidatesSchema,
+  WorkspaceListSchema,
+} from "../tools/context.js";
 
 const TeamspaceOnlyInputSchema = withTeamspaceId({});
 

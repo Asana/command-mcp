@@ -15,7 +15,7 @@ import type {
   AsanaRequestExecutorPort,
   AsanaResourceBundle,
 } from "../src/asana_gateway.js";
-import { createContextService } from "../src/context.js";
+import { createContextService } from "../src/tools/context.js";
 import { buildDiscoverySnapshot, DEADLINE_MS } from "./helpers/tool_test_helpers.js";
 
 const WORKSPACE_GID = "1500000000000001";

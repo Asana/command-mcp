@@ -4,13 +4,15 @@ import {
   type AsanaRequestExecutorPort,
 } from "./asana_gateway.js";
 import type { Config } from "./config.js";
-import { type ContextService, createContextService } from "./context.js";
 import { createSchemaDiscoveryService, type SchemaDiscoveryService } from "./schema_discovery.js";
+import { type ContextService, createContextService } from "./tools/context.js";
+import { createTicketService, type TicketService } from "./tools/tickets.js";
 
 export type CommandServices = {
   readonly executor: AsanaRequestExecutorPort;
   readonly context: ContextService;
   readonly schemaDiscovery: SchemaDiscoveryService;
+  readonly tickets: TicketService;
 };
 
 export function buildServices(
@@ -20,5 +22,6 @@ export function buildServices(
   const executor = new AsanaRequestExecutor(config, options);
   const context = createContextService(executor);
   const schemaDiscovery = createSchemaDiscoveryService(executor);
-  return { executor, context, schemaDiscovery };
+  const tickets = createTicketService(executor);
+  return { executor, context, schemaDiscovery, tickets };
 }

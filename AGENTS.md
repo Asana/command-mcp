@@ -11,8 +11,9 @@ MCP tool definition -> domain operation -> shared request policy -> official Asa
 ```
 
 - Tool definitions under `src/tool_definitions/` are the executable source of truth for each tool's name, description, input, output, annotations, schema policy, and handler. Do not add another name-based dispatcher or contract table.
+- Tool implementation modules under `src/tools/` own the domain orchestration and view projections used by those definitions. They must not duplicate MCP metadata or bypass shared request policy.
 - `src/server.ts` composes tool definitions and supplies request-scoped state. It must not repeat tool contracts or domain behavior.
-- Domain modules own Command-specific decisions: Teamspace scope, Ticket identity, workflow fields, Release membership, comments, dependencies, and pull-request extraction.
+- Tool implementation and shared domain modules own Command-specific decisions: Teamspace scope, Ticket identity, workflow fields, Release membership, comments, dependencies, and pull-request extraction.
 - Keep one small request-policy executor around the official Asana SDK. It owns PAT/header setup, absolute deadlines, bounded read retries, request IDs, redaction, error normalization, and narrow runtime decoding. Its operations should be endpoint-agnostic (`read`, `write`, and `readPage`).
 - Domain modules call official SDK resource methods directly through that executor. Do not mirror SDK endpoints with methods such as `getTask`, `listStories`, or `addTaskToProject`, and do not maintain a general-purpose REST client, endpoint router, or broad mirror of Asana's object model.
 - If an SDK limitation requires custom request mechanics, isolate only that mechanic in the executor and document the reason. Do not let SDK types or HTTP details spread into tool definitions.

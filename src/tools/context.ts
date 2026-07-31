@@ -4,17 +4,17 @@ import {
   TeamspaceCandidateSchema,
   WORKSPACE_FIELDS,
   WorkspaceSchema,
-} from "./asana_contracts.js";
+} from "../asana_contracts.js";
 import type {
   AsanaHttpResult,
   AsanaRequestExecutorPort,
   AsanaRequestOptions,
   AsanaRequestTrace,
-} from "./asana_gateway.js";
-import { CommandError } from "./errors.js";
-import { collectPages } from "./pagination/scanner.js";
-import type { DiscoveryResult } from "./schema_discovery.js";
-import { TeamspaceReferenceSchema } from "./teamspace_identity.js";
+} from "../asana_gateway.js";
+import { CommandError } from "../errors.js";
+import { collectPages } from "../pagination/scanner.js";
+import type { DiscoveryResult } from "../schema_discovery.js";
+import { TeamspaceReferenceSchema } from "../teamspace_identity.js";
 
 export const WorkspaceListSchema = z.object({
   workspaces: z.array(WorkspaceSchema),
