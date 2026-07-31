@@ -1,4 +1,4 @@
-import { z } from "zod";
+import type { z } from "zod";
 import type { DiscoveryResult } from "../schema_discovery.js";
 import { ReleaseReferenceSchema } from "../schema_discovery.js";
 

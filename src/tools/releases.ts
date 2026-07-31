@@ -11,15 +11,12 @@ import {
   type DiscoveryResult,
   discoveryToProvenance,
   type ReleaseReference,
-  readReferencedReleaseGids,
   ReleaseReferenceSchema,
+  readReferencedReleaseGids,
   resolveRelease,
 } from "../schema_discovery.js";
 import { ProvenanceSchema } from "../teamspace_identity.js";
-import {
-  currentReleaseMemberships,
-  ReleaseMembershipSchema,
-} from "./release_memberships.js";
+import { currentReleaseMemberships, ReleaseMembershipSchema } from "./release_memberships.js";
 import type { TicketService } from "./tickets.js";
 
 export { ReleaseMembershipSchema } from "./release_memberships.js";

@@ -30,10 +30,7 @@ import {
   TicketIdentifierSchema,
   type UpdateTicketFields,
 } from "../ticket_inputs.js";
-import {
-  currentReleaseMemberships,
-  ReleaseMembershipSchema,
-} from "./release_memberships.js";
+import { currentReleaseMemberships, ReleaseMembershipSchema } from "./release_memberships.js";
 
 const SHORT_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]*-\d+$/;
 const DEFAULT_CREATE_TIMEOUT_MS = 30_000;
