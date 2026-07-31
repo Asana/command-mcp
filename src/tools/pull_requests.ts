@@ -92,14 +92,14 @@ function normalizePullRequestUrl(candidate: string): string | undefined {
     parsed.hostname.toLowerCase() !== "github.com" ||
     owner === undefined ||
     repository === undefined ||
-    pullSegment !== "pull" ||
+    pullSegment?.toLowerCase() !== "pull" ||
     number === undefined ||
     !/^\d+$/.test(number)
   ) {
     return undefined;
   }
 
-  return `https://github.com/${owner}/${repository}/pull/${number}`;
+  return `https://github.com/${owner.toLowerCase()}/${repository.toLowerCase()}/pull/${number}`;
 }
 
 function extractPullRequestUrls(value: string): string[] {
@@ -143,7 +143,7 @@ function pullRequestFromAttachment(attachment: Attachment): PullRequestResult[] 
 }
 
 function pullRequestsFromStory(story: Story): PullRequestResult[] | undefined {
-  const results = extractPullRequestUrls(`${story.text ?? ""}${story.html_text ?? ""}`).map(
+  const results = extractPullRequestUrls(`${story.text ?? ""}\n${story.html_text ?? ""}`).map(
     (url) => ({
       url,
       provenance: "story" as const,

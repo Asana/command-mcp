@@ -351,20 +351,41 @@ describe("pull-request service", () => {
     ]);
   });
 
+  it("keeps text and HTML URLs distinct when the fields meet at URL boundaries", async () => {
+    const fixture = createFixture({
+      attachmentPages: pages({ items: [] }),
+      storyPages: pages({
+        items: [
+          story("1900000000000001", {
+            text: "https://github.com/asana/command-mcp/pull/133",
+            html_text: "https://github.com/asana/command-mcp/pull/134",
+          }),
+        ],
+      }),
+    });
+
+    const result = await fixture.service.getTicketPrs(TICKET_GID, fixture.snapshot, DEADLINE_MS);
+
+    expect(result.results.map(({ url }) => url)).toEqual([
+      "https://github.com/asana/command-mcp/pull/133",
+      "https://github.com/asana/command-mcp/pull/134",
+    ]);
+  });
+
   it("deduplicates normalized URLs across sources and keeps the first occurrence", async () => {
     const fixture = createFixture({
       attachmentPages: pages({
         items: [
           attachment("1800000000000001", {
             name: "Original attachment",
-            view_url: "https://github.com/asana/command-mcp/pull/127?utm_source=asana",
+            view_url: "https://github.com/ASANA/Command-MCP/Pull/127?utm_source=asana",
           }),
         ],
       }),
       storyPages: pages({
         items: [
           story("1900000000000001", {
-            text: "Also https://github.com/asana/command-mcp/pull/127/files",
+            text: "Also https://github.com/ASANA/Command-MCP/Pull/127/files",
             html_text: "Again https://github.com/asana/command-mcp/pull/127#discussion",
           }),
         ],
