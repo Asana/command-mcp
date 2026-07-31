@@ -7,6 +7,7 @@ describe("buildServices", () => {
     const services = buildServices(CONFIG);
     expect(services.executor).toBeDefined();
     expect(services.context).toBeDefined();
+    expect(services.releases).toBeDefined();
     expect(services.schemaDiscovery).toBeDefined();
     expect(services.comments).toBeDefined();
     expect(services.pullRequests).toBeDefined();
@@ -16,6 +17,9 @@ describe("buildServices", () => {
     expect(typeof services.context.findTeamspaces).toBe("function");
     expect(typeof services.context.getContext).toBe("function");
     expect(typeof services.schemaDiscovery.discover).toBe("function");
+    expect(typeof services.releases.listReleases).toBe("function");
+    expect(typeof services.releases.addTicketToRelease).toBe("function");
+    expect(typeof services.releases.removeTicketFromRelease).toBe("function");
     expect(typeof services.comments.getComments).toBe("function");
     expect(typeof services.comments.addComment).toBe("function");
     expect(typeof services.pullRequests.getTicketPrs).toBe("function");

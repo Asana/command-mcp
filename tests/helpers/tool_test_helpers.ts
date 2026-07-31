@@ -5,6 +5,7 @@ import type { CommandServices } from "../../src/services.js";
 import type { CommentService } from "../../src/tools/comments.js";
 import type { ContextService } from "../../src/tools/context.js";
 import type { PullRequestService } from "../../src/tools/pull_requests.js";
+import type { ReleaseService } from "../../src/tools/releases.js";
 import type { TicketService } from "../../src/tools/tickets.js";
 import type { WorkflowService } from "../../src/tools/workflow.js";
 
@@ -72,6 +73,15 @@ export function createUnexpectedPullRequestServiceFake(): PullRequestService {
   };
 }
 
+export function createUnexpectedReleaseServiceFake(): ReleaseService {
+  return {
+    listReleases: () => unexpectedExecutorCall("ReleaseService.listReleases"),
+    addTicketToRelease: async () => unexpectedExecutorCall("ReleaseService.addTicketToRelease"),
+    removeTicketFromRelease: async () =>
+      unexpectedExecutorCall("ReleaseService.removeTicketFromRelease"),
+  };
+}
+
 export function createUnexpectedWorkflowServiceFake(): WorkflowService {
   return {
     addDependency: async () => unexpectedExecutorCall("WorkflowService.addDependency"),
@@ -133,6 +143,7 @@ export function createTestContainer(
   overrides: {
     comments?: CommentService;
     pullRequests?: PullRequestService;
+    releases?: ReleaseService;
     tickets?: TicketService;
     workflow?: WorkflowService;
   } = {},
@@ -140,6 +151,7 @@ export function createTestContainer(
   return {
     executor: createUnexpectedExecutorFake(),
     context: createUnexpectedContextServiceFake(),
+    releases: overrides.releases ?? createUnexpectedReleaseServiceFake(),
     schemaDiscovery: createFakeSchemaDiscoveryService(state),
     comments: overrides.comments ?? createUnexpectedCommentServiceFake(),
     pullRequests: overrides.pullRequests ?? createUnexpectedPullRequestServiceFake(),

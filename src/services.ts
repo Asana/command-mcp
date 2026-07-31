@@ -8,6 +8,7 @@ import { createSchemaDiscoveryService, type SchemaDiscoveryService } from "./sch
 import { type CommentService, createCommentService } from "./tools/comments.js";
 import { type ContextService, createContextService } from "./tools/context.js";
 import { createPullRequestService, type PullRequestService } from "./tools/pull_requests.js";
+import { createReleaseService, type ReleaseService } from "./tools/releases.js";
 import { createTicketService, type TicketService } from "./tools/tickets.js";
 import { createWorkflowService, type WorkflowService } from "./tools/workflow.js";
 
@@ -17,6 +18,7 @@ export type CommandServices = {
   readonly schemaDiscovery: SchemaDiscoveryService;
   readonly comments: CommentService;
   readonly pullRequests: PullRequestService;
+  readonly releases: ReleaseService;
   readonly tickets: TicketService;
   readonly workflow: WorkflowService;
 };
@@ -33,6 +35,16 @@ export function buildServices(
   const pullRequests = createPullRequestService(executor, tickets, {
     maxScanItems: config.maxScanTasks,
   });
+  const releases = createReleaseService(executor, tickets);
   const workflow = createWorkflowService(executor, tickets);
-  return { executor, context, schemaDiscovery, comments, pullRequests, tickets, workflow };
+  return {
+    executor,
+    context,
+    schemaDiscovery,
+    comments,
+    pullRequests,
+    releases,
+    tickets,
+    workflow,
+  };
 }

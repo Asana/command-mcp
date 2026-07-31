@@ -11,6 +11,7 @@ import {
   createUnexpectedCommentServiceFake,
   createUnexpectedExecutorFake,
   createUnexpectedPullRequestServiceFake,
+  createUnexpectedReleaseServiceFake,
   createUnexpectedTicketServiceFake,
   createUnexpectedWorkflowServiceFake,
   DEADLINE_MS,
@@ -53,6 +54,7 @@ function createServices(options: {
   return {
     executor: createUnexpectedExecutorFake(),
     context: options.context ?? createUnexpectedContextService(),
+    releases: createUnexpectedReleaseServiceFake(),
     schemaDiscovery: options.schemaDiscovery ?? createUnexpectedDiscoveryService(),
     comments: createUnexpectedCommentServiceFake(),
     pullRequests: createUnexpectedPullRequestServiceFake(),
@@ -271,6 +273,7 @@ describe("context tool definitions", () => {
     const services: CommandServices = {
       executor,
       context: createContextService(executor),
+      releases: createUnexpectedReleaseServiceFake(),
       schemaDiscovery,
       comments: createUnexpectedCommentServiceFake(),
       pullRequests: createUnexpectedPullRequestServiceFake(),
