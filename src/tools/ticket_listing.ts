@@ -24,6 +24,7 @@ import {
   resolveRelease,
 } from "../schema_discovery.js";
 import { normalizeName, ProvenanceSchema } from "../teamspace_identity.js";
+import type { ListTicketFilters, SearchTicketFilters } from "../ticket_inputs.js";
 import { projectTicketView, TicketViewSchema } from "./tickets.js";
 
 const LIST_CURSOR_VERSION = 1;
@@ -60,30 +61,10 @@ export const SearchTicketsOutputSchema = ProvenanceSchema.extend({
     .describe("True when more matches existed than returned or source exhaustion was not proven"),
 });
 
-export type ListTicketsInput = {
-  readonly cursor?: string | undefined;
-  readonly limit: number;
-  readonly completed?: boolean | undefined;
-  readonly type?: string | undefined;
-  readonly label?: string | undefined;
-  readonly assignee?: string | undefined;
-  readonly release?: string | undefined;
-};
-
-export type SearchTicketsInput = {
-  readonly text?: string | undefined;
-  readonly assignee?: string | undefined;
-  readonly completed?: boolean | undefined;
-  readonly "due_on.before"?: string | undefined;
-  readonly "due_on.after"?: string | undefined;
-  readonly "completed_on.before"?: string | undefined;
-  readonly "completed_on.after"?: string | undefined;
-  readonly compact: boolean;
-  readonly limit: number;
-};
-
 export type ListTicketsOutput = z.infer<typeof ListTicketsOutputSchema>;
 export type SearchTicketsOutput = z.infer<typeof SearchTicketsOutputSchema>;
+export type ListTicketsInput = ListTicketFilters;
+export type SearchTicketsInput = SearchTicketFilters;
 
 export type TicketListingServiceOptions = {
   readonly maxScanTasks: number;
@@ -91,12 +72,12 @@ export type TicketListingServiceOptions = {
 
 export type TicketListingService = {
   listTickets(
-    input: ListTicketsInput,
+    input: ListTicketFilters,
     snapshot: DiscoveryResult,
     deadlineMs: number,
   ): Promise<ListTicketsOutput>;
   searchTickets(
-    input: SearchTicketsInput,
+    input: SearchTicketFilters,
     snapshot: DiscoveryResult,
     deadlineMs: number,
   ): Promise<SearchTicketsOutput>;
@@ -197,7 +178,7 @@ function normalizedEquals(actual: string, expected: string): boolean {
 }
 
 function matchesAssignee(
-  assignee: ListTicketsInput["assignee"],
+  assignee: ListTicketFilters["assignee"],
   ticket: z.infer<typeof TicketViewSchema>,
 ): boolean {
   if (assignee === undefined) {
@@ -222,7 +203,7 @@ function hasProject(task: Task, projectGid: string, trace: AsanaRequestTrace): b
 
 function requireListFilterFields(
   task: Task,
-  input: ListTicketsInput,
+  input: ListTicketFilters,
   snapshot: DiscoveryResult,
   trace: AsanaRequestTrace,
 ): void {
@@ -253,7 +234,7 @@ function requireListFilterFields(
   }
 }
 
-function listBinding(input: ListTicketsInput, snapshot: DiscoveryResult): ListCursorBinding {
+function listBinding(input: ListTicketFilters, snapshot: DiscoveryResult): ListCursorBinding {
   return {
     teamspaceId: snapshot.teamspace.gid,
     limit: input.limit,
@@ -285,7 +266,7 @@ export function createTicketListingService(
   const { maxScanTasks } = options;
 
   async function listTickets(
-    input: ListTicketsInput,
+    input: ListTicketFilters,
     snapshot: DiscoveryResult,
     deadlineMs: number,
   ): Promise<ListTicketsOutput> {
@@ -371,7 +352,7 @@ export function createTicketListingService(
   }
 
   async function searchTickets(
-    input: SearchTicketsInput,
+    input: SearchTicketFilters,
     snapshot: DiscoveryResult,
     deadlineMs: number,
   ): Promise<SearchTicketsOutput> {

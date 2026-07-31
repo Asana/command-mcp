@@ -167,6 +167,20 @@ describe("ticket tool definitions", () => {
         limit: 1001,
       }).success,
     ).toBe(false);
+    expect(
+      SearchTicketsInputSchema.safeParse({
+        teamspace_id: TEAMSPACE_ID,
+        assignee: "Ada Lovelace",
+      }).success,
+    ).toBe(false);
+    for (const assignee of ["me", "ada@example.com", "1800000000000010"]) {
+      expect(
+        SearchTicketsInputSchema.safeParse({
+          teamspace_id: TEAMSPACE_ID,
+          assignee,
+        }).success,
+      ).toBe(true);
+    }
 
     const searchInput = findTool("search_tickets").protocolInputSchema;
     if (!(searchInput instanceof z.ZodObject)) {

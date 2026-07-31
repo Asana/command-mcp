@@ -203,6 +203,28 @@ describe("ticket listing service", () => {
       completed: true,
       completed_at: "2026-07-31T00:00:00.000Z",
     });
+    const wrongType = ticket(discovered, "1700000000000004", {
+      custom_fields: ticket(discovered, "1700000000000004").custom_fields?.map((field) =>
+        field.gid === discovered.ticket_type_field?.gid
+          ? { ...field, enum_value: { gid: "1900000000000012", name: "Feature" } }
+          : field,
+      ),
+    });
+    const wrongLabel = ticket(discovered, "1700000000000005", {
+      custom_fields: ticket(discovered, "1700000000000005").custom_fields?.map((field) =>
+        field.gid === discovered.labels_field.gid ? { ...field, multi_enum_values: [] } : field,
+      ),
+    });
+    const wrongAssignee = ticket(discovered, "1700000000000006", {
+      assignee: {
+        gid: "1800000000000099",
+        name: "Grace Hopper",
+        email: "grace@example.com",
+      },
+    });
+    const wrongRelease = ticket(discovered, "1700000000000007", {
+      projects: [{ gid: discovered.teamspace.gid, name: discovered.teamspace.name }],
+    });
     const observedOptions: Record<string, unknown>[] = [];
     const getTasksForProject: TasksApi["getTasksForProjectWithHttpInfo"] = async (
       projectGid,
@@ -210,7 +232,15 @@ describe("ticket listing service", () => {
     ) => {
       expect(projectGid).toBe(TEAMSPACE_ID);
       observedOptions.push(options ?? {});
-      return pageResult([ordinary, completed, matching]);
+      return pageResult([
+        ordinary,
+        completed,
+        wrongType,
+        wrongLabel,
+        wrongAssignee,
+        wrongRelease,
+        matching,
+      ]);
     };
     const service = createTicketListingService(
       createExecutor(createResourceBundle({ getTasksForProject })),
@@ -231,7 +261,7 @@ describe("ticket listing service", () => {
         DEADLINE_MS,
       );
       expect(result.tickets.map(({ gid }) => gid)).toEqual([matching.gid]);
-      expect(result.scanned_count).toBe(3);
+      expect(result.scanned_count).toBe(7);
       expect(result.truncated).toBe(false);
       expect(result.has_more).toBe(false);
       expect(result.next_cursor).toBeNull();
@@ -240,6 +270,13 @@ describe("ticket listing service", () => {
       limit: 20,
       opt_fields: FULL_TASK_FIELDS,
     });
+
+    const byReleaseGid = await service.listTickets(
+      { release: RELEASE_GID, limit: 50 },
+      discovered,
+      DEADLINE_MS,
+    );
+    expect(byReleaseGid.tickets.some(({ gid }) => gid === matching.gid)).toBe(true);
   });
 
   it("resolves Release membership and reports unknown Releases", async () => {
@@ -316,6 +353,16 @@ describe("ticket listing service", () => {
       service.listTickets(
         { type: "bug", limit: 2, cursor: first.next_cursor ?? undefined },
         discovered,
+        DEADLINE_MS,
+      ),
+    ).rejects.toMatchObject({ code: "cursor_invalid" });
+    await expect(
+      service.listTickets(
+        { type: "bug", limit: 1, cursor: first.next_cursor ?? undefined },
+        {
+          ...discovered,
+          teamspace: { gid: "1211850000337999", name: "Different Teamspace" },
+        },
         DEADLINE_MS,
       ),
     ).rejects.toMatchObject({ code: "cursor_invalid" });

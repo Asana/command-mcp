@@ -2,7 +2,8 @@ import { z } from "zod";
 import { TeamspaceIdentifierSchema } from "../teamspace_identity.js";
 import {
   CreateTicketFieldsSchema,
-  DateOnlySchema,
+  ListTicketFiltersSchema,
+  SearchTicketFiltersSchema,
   TicketIdentifierSchema,
   UpdateTicketFieldsSchema,
   withTicketId,
@@ -32,33 +33,9 @@ const readTicket = defineTeamspaceScopedTool({
     context.services.tickets.readTicket(input.ticket_id, context.schema, context.deadlineMs),
 });
 
-const FilterNameSchema = z.string().trim().min(1, "Filter value must not be empty");
-
-export const ListTicketsInputSchema = z
-  .object({
-    teamspace_id: TeamspaceIdentifierSchema,
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(100)
-      .default(50)
-      .describe("Maximum tickets to return, from 1 to 100"),
-    cursor: z
-      .string()
-      .trim()
-      .min(1)
-      .describe("Opaque cursor from a prior call with exactly the same filters and limit")
-      .optional(),
-    completed: z.boolean().describe("Exact ticket completion state").optional(),
-    type: FilterNameSchema.describe("Teamspace-local ticket type name").optional(),
-    label: FilterNameSchema.describe("Teamspace-local label name").optional(),
-    assignee: FilterNameSchema.describe(
-      "Assignee name, email address, or numeric Asana user GID",
-    ).optional(),
-    release: FilterNameSchema.describe("Release project name or numeric GID").optional(),
-  })
-  .strict();
+export const ListTicketsInputSchema = ListTicketFiltersSchema.extend({
+  teamspace_id: TeamspaceIdentifierSchema,
+});
 
 const listTickets = defineTeamspaceScopedTool({
   name: "list_tickets",
@@ -72,39 +49,9 @@ const listTickets = defineTeamspaceScopedTool({
     context.services.ticketListing.listTickets(input, context.schema, context.deadlineMs),
 });
 
-export const SearchTicketsInputSchema = z
-  .object({
-    teamspace_id: TeamspaceIdentifierSchema,
-    text: z
-      .string()
-      .trim()
-      .min(1, "Search text must not be empty")
-      .describe("Distinctive text to search for in ticket names and descriptions")
-      .optional(),
-    assignee: z
-      .string()
-      .trim()
-      .min(1, "Assignee must not be empty")
-      .describe("Assignee identifier accepted by Asana workspace search")
-      .optional(),
-    completed: z.boolean().describe("Exact completion state").optional(),
-    "due_on.before": DateOnlySchema.optional(),
-    "due_on.after": DateOnlySchema.optional(),
-    "completed_on.before": DateOnlySchema.optional(),
-    "completed_on.after": DateOnlySchema.optional(),
-    compact: z
-      .boolean()
-      .default(false)
-      .describe("Return only gid, name, created_at, and completed_at"),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(1000)
-      .default(50)
-      .describe("Maximum matches to return, from 1 to 1,000"),
-  })
-  .strict();
+export const SearchTicketsInputSchema = SearchTicketFiltersSchema.extend({
+  teamspace_id: TeamspaceIdentifierSchema,
+});
 
 const searchTickets = defineTeamspaceScopedTool({
   name: "search_tickets",
