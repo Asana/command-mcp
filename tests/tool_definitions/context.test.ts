@@ -9,6 +9,7 @@ import { createContextService } from "../../src/tools/context.js";
 import {
   buildDiscoverySnapshot,
   createUnexpectedExecutorFake,
+  createUnexpectedReleaseServiceFake,
   createUnexpectedTicketServiceFake,
   DEADLINE_MS,
   TEAMSPACE_ID,
@@ -50,6 +51,7 @@ function createServices(options: {
   return {
     executor: createUnexpectedExecutorFake(),
     context: options.context ?? createUnexpectedContextService(),
+    releases: createUnexpectedReleaseServiceFake(),
     schemaDiscovery: options.schemaDiscovery ?? createUnexpectedDiscoveryService(),
     tickets: createUnexpectedTicketServiceFake(),
   };
@@ -265,6 +267,7 @@ describe("context tool definitions", () => {
     const services: CommandServices = {
       executor,
       context: createContextService(executor),
+      releases: createUnexpectedReleaseServiceFake(),
       schemaDiscovery,
       tickets: createUnexpectedTicketServiceFake(),
     };
