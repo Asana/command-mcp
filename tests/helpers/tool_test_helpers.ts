@@ -2,9 +2,11 @@ import type { AsanaRequestExecutorPort } from "../../src/asana_gateway.js";
 import type { Config } from "../../src/config.js";
 import type { DiscoveryResult } from "../../src/schema_discovery.js";
 import type { CommandServices } from "../../src/services.js";
+import type { CommentService } from "../../src/tools/comments.js";
 import type { ContextService } from "../../src/tools/context.js";
 import type { PullRequestService } from "../../src/tools/pull_requests.js";
 import type { TicketService } from "../../src/tools/tickets.js";
+import type { WorkflowService } from "../../src/tools/workflow.js";
 
 export const CONFIG: Config = {
   accessToken: "test-token",
@@ -47,6 +49,13 @@ export function createUnexpectedContextServiceFake(): ContextService {
   };
 }
 
+export function createUnexpectedCommentServiceFake(): CommentService {
+  return {
+    getComments: async () => unexpectedExecutorCall("CommentService.getComments"),
+    addComment: async () => unexpectedExecutorCall("CommentService.addComment"),
+  };
+}
+
 export function createUnexpectedTicketServiceFake(): TicketService {
   return {
     resolve: async () => unexpectedExecutorCall("TicketService.resolve"),
@@ -60,6 +69,13 @@ export function createUnexpectedTicketServiceFake(): TicketService {
 export function createUnexpectedPullRequestServiceFake(): PullRequestService {
   return {
     getTicketPrs: async () => unexpectedExecutorCall("PullRequestService.getTicketPrs"),
+  };
+}
+
+export function createUnexpectedWorkflowServiceFake(): WorkflowService {
+  return {
+    addDependency: async () => unexpectedExecutorCall("WorkflowService.addDependency"),
+    removeDependency: async () => unexpectedExecutorCall("WorkflowService.removeDependency"),
   };
 }
 
@@ -114,14 +130,21 @@ export function createFakeSchemaDiscoveryService(state: FakeSchemaDiscoveryState
 
 export function createTestContainer(
   state: FakeSchemaDiscoveryState,
-  overrides: { pullRequests?: PullRequestService; tickets?: TicketService } = {},
+  overrides: {
+    comments?: CommentService;
+    pullRequests?: PullRequestService;
+    tickets?: TicketService;
+    workflow?: WorkflowService;
+  } = {},
 ): CommandServices {
   return {
     executor: createUnexpectedExecutorFake(),
     context: createUnexpectedContextServiceFake(),
     schemaDiscovery: createFakeSchemaDiscoveryService(state),
+    comments: overrides.comments ?? createUnexpectedCommentServiceFake(),
     pullRequests: overrides.pullRequests ?? createUnexpectedPullRequestServiceFake(),
     tickets: overrides.tickets ?? createUnexpectedTicketServiceFake(),
+    workflow: overrides.workflow ?? createUnexpectedWorkflowServiceFake(),
   };
 }
 
