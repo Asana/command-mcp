@@ -9,6 +9,7 @@ import type { CallContext, ToolDefinition } from "../../src/tool_registry.js";
 import {
   buildDiscoverySnapshot,
   createUnexpectedExecutorFake,
+  createUnexpectedTicketServiceFake,
   DEADLINE_MS,
   TEAMSPACE_ID,
 } from "../helpers/tool_test_helpers.js";
@@ -50,6 +51,7 @@ function createServices(options: {
     executor: createUnexpectedExecutorFake(),
     context: options.context ?? createUnexpectedContextService(),
     schemaDiscovery: options.schemaDiscovery ?? createUnexpectedDiscoveryService(),
+    tickets: createUnexpectedTicketServiceFake(),
   };
 }
 
@@ -264,6 +266,7 @@ describe("context tool definitions", () => {
       executor,
       context: createContextService(executor),
       schemaDiscovery,
+      tickets: createUnexpectedTicketServiceFake(),
     };
 
     await expect(
