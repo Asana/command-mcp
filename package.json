@@ -19,9 +19,10 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --platform node --target node22 --clean --sourcemap",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src tests",
+    "lint": "biome check src tests scripts",
     "test": "vitest run --exclude 'tests/integration/**'",
     "test:integration": "vitest run tests/integration",
+    "validate:live": "npm run build && node --experimental-strip-types scripts/live-validation.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {
