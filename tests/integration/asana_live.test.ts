@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { runDoctor } from "../../src/doctor.js";
-import { CommandError } from "../../src/errors.js";
 import type { DiscoveryResult } from "../../src/schema_discovery.js";
 import { buildServices, type CommandServices } from "../../src/services.js";
 import type { CreateTicketFields, UpdateTicketFields } from "../../src/ticket_inputs.js";
@@ -251,16 +250,20 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           snapshot,
           deadline(),
         );
-        expect(addedRelease.data.memberships.some((entry) => entry.gid === release.gid)).toBe(true);
+        expect(
+          addedRelease.data.memberships.some((entry: { gid: string }) => entry.gid === release.gid),
+        ).toBe(true);
         const removedRelease = await services.releases.removeTicketFromRelease(
           primary.gid,
           release.gid,
           snapshot,
           deadline(),
         );
-        expect(removedRelease.data.memberships.some((entry) => entry.gid === release.gid)).toBe(
-          false,
-        );
+        expect(
+          removedRelease.data.memberships.some(
+            (entry: { gid: string }) => entry.gid === release.gid,
+          ),
+        ).toBe(false);
 
         const addedDependency = await services.workflow.addDependency(
           primary.gid,
@@ -269,7 +272,9 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           deadline(),
         );
         expect(
-          addedDependency.data.dependencies.some((entry) => entry.gid === dependency.gid),
+          addedDependency.data.dependencies.some(
+            (entry: { gid: string }) => entry.gid === dependency.gid,
+          ),
         ).toBe(true);
         const removedDependency = await services.workflow.removeDependency(
           primary.gid,
@@ -278,7 +283,9 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           deadline(),
         );
         expect(
-          removedDependency.data.dependencies.some((entry) => entry.gid === dependency.gid),
+          removedDependency.data.dependencies.some(
+            (entry: { gid: string }) => entry.gid === dependency.gid,
+          ),
         ).toBe(false);
 
         const update = await services.tickets.updateTicket(
@@ -306,7 +313,7 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           );
           await expect(
             services.tickets.readTicket(primary.gid, secondSnapshot, deadline()),
-          ).rejects.toMatchObject<Partial<CommandError>>({ code: "out_of_scope" });
+          ).rejects.toMatchObject({ code: "out_of_scope" });
         } else {
           console.warn(
             "cross-scope live assertion skipped: ASANA_INTEGRATION_TEST_SECOND_TEAMSPACE is not set",

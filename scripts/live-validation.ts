@@ -1,10 +1,10 @@
+import { resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   getDefaultEnvironment,
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { ApiClient, TasksApi, UsersApi } from "asana";
-import { resolve } from "node:path";
 
 type Status = "pass" | "fail" | "unknown";
 
@@ -217,7 +217,7 @@ async function callTool(
     response = await client.callTool({ name, arguments: argumentsValue }, undefined, {
       timeout: CALL_TIMEOUT_MS,
     });
-  } catch (error) {
+  } catch {
     throw new EvidenceError("unknown", `${name} timed out or returned no protocol evidence`);
   }
 
@@ -235,8 +235,14 @@ async function callTool(
     throw new EvidenceError("unknown", `${name} omitted structured content`);
   }
 
-  const textBlock = response.content.find((entry) => entry.type === "text");
-  if (textBlock === undefined || textBlock.type !== "text") {
+  if (!Array.isArray(response.content)) {
+    throw new EvidenceError("unknown", `${name} content was unparseable`);
+  }
+  const textBlock = response.content.find(
+    (entry): entry is { type: "text"; text: string } =>
+      isObject(entry) && entry.type === "text" && typeof entry.text === "string",
+  );
+  if (textBlock === undefined) {
     throw new EvidenceError("unknown", `${name} omitted text content`);
   }
   let parsedText: unknown;
@@ -662,8 +668,10 @@ async function validate(): Promise<void> {
     }
 
     if (primaryGid !== undefined && dependencyGid !== undefined) {
+      const expectedPrimaryGid = primaryGid;
+      const expectedDependencyGid = dependencyGid;
       await probe("list_tickets", async () => {
-        const expected = new Set([primaryGid, dependencyGid]);
+        const expected = new Set([expectedPrimaryGid, expectedDependencyGid]);
         const found = new Set<string>();
         let cursor: string | undefined;
         for (let page = 0; page < 20; page += 1) {
@@ -712,7 +720,7 @@ async function validate(): Promise<void> {
               .map((ticket) => ticket.gid)
               .filter((gid): gid is string => typeof gid === "string"),
           );
-          if (found.has(primaryGid) && found.has(dependencyGid)) {
+          if (found.has(expectedPrimaryGid) && found.has(expectedDependencyGid)) {
             return { value, detail: "bounded eventual-consistency retry found both tickets" };
           }
           await delay(3_000);
@@ -723,7 +731,7 @@ async function validate(): Promise<void> {
       await probe("complete_ticket", async () => {
         const value = await callTool(client, "update_ticket", {
           teamspace_id: teamspaceId,
-          task_gid: primaryGid,
+          task_gid: expectedPrimaryGid,
           completed: true,
         });
         const ticket = objectField(objectField(value, "data"), "ticket");
