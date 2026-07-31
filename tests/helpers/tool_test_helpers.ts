@@ -1,6 +1,7 @@
+import type { AsanaRequestExecutorPort } from "../../src/asana_gateway.js";
 import type { Config } from "../../src/config.js";
 import type { DiscoveryResult } from "../../src/schema_discovery.js";
-import { createServiceContainer } from "../../src/service_container.js";
+import type { CommandServices } from "../../src/services.js";
 
 export const CONFIG: Config = {
   accessToken: "test-token",
@@ -14,6 +15,26 @@ export const CONFIG: Config = {
 export const TEAMSPACE_ID = "1211850000337894";
 export const TEAMSPACE_URL = `https://app.asana.com/1/15793206719/dev/space/${TEAMSPACE_ID}`;
 export const DEADLINE_MS = 2_000_000;
+
+export class UnexpectedExecutorCallError extends Error {
+  constructor(method: string) {
+    super(`Unexpected call to AsanaRequestExecutor.${method}`);
+    this.name = "UnexpectedExecutorCallError";
+  }
+}
+
+function unexpectedExecutorCall(method: string): never {
+  throw new UnexpectedExecutorCallError(method);
+}
+
+export function createUnexpectedExecutorFake(): AsanaRequestExecutorPort {
+  return {
+    createTrace: () => unexpectedExecutorCall("createTrace"),
+    read: async () => unexpectedExecutorCall("read"),
+    write: async () => unexpectedExecutorCall("write"),
+    readPage: async () => unexpectedExecutorCall("readPage"),
+  };
+}
 
 export function buildDiscoverySnapshot(teamspaceId: string): DiscoveryResult {
   return {
@@ -64,10 +85,9 @@ export function createFakeSchemaDiscoveryService(state: FakeSchemaDiscoveryState
   };
 }
 
-export function createTestContainer(state: FakeSchemaDiscoveryState) {
-  const base = createServiceContainer(CONFIG);
+export function createTestContainer(state: FakeSchemaDiscoveryState): CommandServices {
   return {
-    ...base,
+    executor: createUnexpectedExecutorFake(),
     schemaDiscovery: createFakeSchemaDiscoveryService(state),
   };
 }

@@ -48,6 +48,25 @@ function enumerationOrLiteral<T extends string>(values: readonly T[]): z.ZodType
   return z.enum(values as [T, T, ...T[]]);
 }
 
+function zodUnionFromSchemas(schemas: readonly z.ZodTypeAny[]): z.ZodTypeAny {
+  if (schemas.length === 0) {
+    throw new Error("zodUnionFromSchemas requires at least one schema");
+  }
+  if (schemas.length === 1) {
+    const [onlySchema] = schemas;
+    if (onlySchema === undefined) {
+      throw new Error("zodUnionFromSchemas requires at least one schema");
+    }
+    return onlySchema;
+  }
+
+  const [first, second, ...rest] = schemas;
+  if (first === undefined || second === undefined) {
+    throw new Error("zodUnionFromSchemas requires at least one schema");
+  }
+  return z.union([first, second, ...rest]);
+}
+
 export function mutationVariantsToSchemas(
   variants: readonly MutationVariant<string, string, z.ZodTypeAny>[],
 ): {
@@ -75,13 +94,7 @@ export function mutationVariantsToSchemas(
           }
           return onlyVariant;
         })()
-      : z.union(
-          runtimeVariants as unknown as [
-            (typeof runtimeVariants)[number],
-            (typeof runtimeVariants)[number],
-            ...(typeof runtimeVariants)[number][],
-          ],
-        );
+      : zodUnionFromSchemas(runtimeVariants);
 
   const statuses = [...new Set(variants.map((variant) => variant.status))];
   const outcomes = [...new Set(variants.map((variant) => variant.outcome))];
@@ -90,10 +103,7 @@ export function mutationVariantsToSchemas(
   const protocolSchema = MutationMetadataSchema.extend({
     status: enumerationOrLiteral(statuses),
     outcome: enumerationOrLiteral(outcomes),
-    data:
-      dataSchemas.length === 1
-        ? (dataSchemas[0] as z.ZodTypeAny)
-        : z.union(dataSchemas as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]),
+    data: zodUnionFromSchemas(dataSchemas),
   });
 
   return { runtimeSchema, protocolSchema };

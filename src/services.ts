@@ -6,15 +6,15 @@ import {
 import type { Config } from "./config.js";
 import { createSchemaDiscoveryService, type SchemaDiscoveryService } from "./schema_discovery.js";
 
-export type ServiceContainer = {
+export type CommandServices = {
   readonly executor: AsanaRequestExecutorPort;
   readonly schemaDiscovery: SchemaDiscoveryService;
 };
 
-export function createServiceContainer(
+export function buildServices(
   config: Config,
   options: AsanaRequestExecutorOptions = {},
-): ServiceContainer {
+): CommandServices {
   const executor = new AsanaRequestExecutor(config, options);
   const schemaDiscovery = createSchemaDiscoveryService(executor);
   return { executor, schemaDiscovery };

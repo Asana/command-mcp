@@ -2,14 +2,14 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { type ZodError, z } from "zod";
 import { CommandError } from "./errors.js";
 import type { DiscoveryResult } from "./schema_discovery.js";
-import type { ServiceContainer } from "./service_container.js";
-import { resolveTeamspaceIdentifier } from "./teamspace_identity.js";
+import type { CommandServices } from "./services.js";
+import { resolveTeamspaceIdentifier, TeamspaceIdentifierSchema } from "./teamspace_identity.js";
 
 export const EMPTY_INPUT_SCHEMA = z.object({}).strict();
 
 export type CallContext = {
   readonly deadlineMs: number;
-  readonly services: ServiceContainer;
+  readonly services: CommandServices;
 };
 
 export type TeamspaceCallContext = CallContext & {
@@ -80,9 +80,8 @@ function assertStructuredToolOutput(value: unknown): Record<string, unknown> {
 function validateToolOutput<TSchema extends z.ZodTypeAny>(
   schema: TSchema,
   value: unknown,
-): z.infer<TSchema> {
-  const structured = assertStructuredToolOutput(value);
-  const parsed = schema.safeParse(structured);
+): Record<string, unknown> {
+  const parsed = schema.safeParse(value);
   if (!parsed.success) {
     throw new CommandError("schema_drift", "Tool output validation failed", {
       details: {
@@ -95,7 +94,7 @@ function validateToolOutput<TSchema extends z.ZodTypeAny>(
       cause: parsed.error,
     });
   }
-  return parsed.data;
+  return assertStructuredToolOutput(parsed.data);
 }
 
 function buildToolAnnotations(
@@ -149,7 +148,7 @@ export function defineUnscopedTool<
 }
 
 type TeamspaceScopedInput<TShape extends z.ZodRawShape> = z.ZodObject<
-  TShape & { teamspace_id: z.ZodTypeAny }
+  TShape & { teamspace_id: typeof TeamspaceIdentifierSchema }
 >;
 
 type HandlerInputWithoutTeamspaceId<TInputSchema extends z.ZodTypeAny> =
@@ -195,7 +194,9 @@ export function defineTeamspaceScopedTool<
     annotations: buildToolAnnotations(config.title, config.readOnly, config),
     execute: async (input, context) => {
       const parsedInput = parseToolInput(config.input, input);
-      const teamspaceId = resolveTeamspaceIdentifier(String(parsedInput.teamspace_id));
+      const teamspaceId = resolveTeamspaceIdentifier(
+        TeamspaceIdentifierSchema.parse(parsedInput.teamspace_id),
+      );
       const schema = await context.services.schemaDiscovery.discover(
         teamspaceId,
         context.deadlineMs,

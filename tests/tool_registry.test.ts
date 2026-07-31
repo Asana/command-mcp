@@ -16,6 +16,7 @@ import {
   type FakeSchemaDiscoveryState,
   TEAMSPACE_ID,
   TEAMSPACE_URL,
+  UnexpectedExecutorCallError,
 } from "./helpers/tool_test_helpers.js";
 
 function createCallContext(state: FakeSchemaDiscoveryState): CallContext {
@@ -24,6 +25,13 @@ function createCallContext(state: FakeSchemaDiscoveryState): CallContext {
     services: createTestContainer(state),
   };
 }
+
+describe("createTestContainer", () => {
+  it("fails loudly when the executor is used unexpectedly", () => {
+    const services = createTestContainer(createDiscoveryState());
+    expect(() => services.executor.createTrace()).toThrow(UnexpectedExecutorCallError);
+  });
+});
 
 describe("defineUnscopedTool", () => {
   const inputSchema = z.object({
@@ -101,7 +109,7 @@ describe("defineUnscopedTool", () => {
     });
   });
 
-  it("rejects a non-object handler result", async () => {
+  it("rejects a handler result that fails output schema validation", async () => {
     const tool = defineUnscopedTool({
       name: "echo",
       title: "Echo",
@@ -115,20 +123,39 @@ describe("defineUnscopedTool", () => {
     await expect(tool.execute({}, createCallContext(createDiscoveryState()))).rejects.toMatchObject(
       {
         code: "schema_drift",
-        message: "Tool output must be a non-null object",
+        message: "Tool output validation failed",
       },
     );
   });
 
-  it("rejects an array handler result", async () => {
+  it("rejects a transform that yields null after schema validation", async () => {
     const tool = defineUnscopedTool({
       name: "echo",
       title: "Echo",
       description: "Echoes a value",
       input: EMPTY_INPUT_SCHEMA,
-      output: z.object({ ok: z.boolean() }),
+      output: z.object({ ok: z.boolean() }).transform(() => null),
       readOnly: true,
-      handler: () => [],
+      handler: () => ({ ok: true }),
+    });
+
+    await expect(tool.execute({}, createCallContext(createDiscoveryState()))).rejects.toMatchObject(
+      {
+        code: "schema_drift",
+        message: "Tool output must be a non-null object",
+      },
+    );
+  });
+
+  it("rejects a transform that yields an array after schema validation", async () => {
+    const tool = defineUnscopedTool({
+      name: "echo",
+      title: "Echo",
+      description: "Echoes a value",
+      input: EMPTY_INPUT_SCHEMA,
+      output: z.object({ ok: z.boolean() }).transform(() => []),
+      readOnly: true,
+      handler: () => ({ ok: true }),
     });
 
     await expect(tool.execute({}, createCallContext(createDiscoveryState()))).rejects.toMatchObject(
