@@ -18,6 +18,8 @@ describe("buildServices", () => {
     expect(typeof services.tickets.readTicket).toBe("function");
     expect(typeof services.tickets.createTicket).toBe("function");
     expect(typeof services.tickets.updateTicket).toBe("function");
+    expect(typeof services.ticketListing.listTickets).toBe("function");
+    expect(typeof services.ticketListing.searchTickets).toBe("function");
     expect(typeof services.executor.createTrace).toBe("function");
   });
 });

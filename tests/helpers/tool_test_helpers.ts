@@ -3,6 +3,7 @@ import type { Config } from "../../src/config.js";
 import type { DiscoveryResult } from "../../src/schema_discovery.js";
 import type { CommandServices } from "../../src/services.js";
 import type { ContextService } from "../../src/tools/context.js";
+import type { TicketListingService } from "../../src/tools/ticket_listing.js";
 import type { TicketService } from "../../src/tools/tickets.js";
 
 export const CONFIG: Config = {
@@ -53,6 +54,13 @@ export function createUnexpectedTicketServiceFake(): TicketService {
     readTicket: async () => unexpectedExecutorCall("TicketService.readTicket"),
     createTicket: async () => unexpectedExecutorCall("TicketService.createTicket"),
     updateTicket: async () => unexpectedExecutorCall("TicketService.updateTicket"),
+  };
+}
+
+export function createUnexpectedTicketListingServiceFake(): TicketListingService {
+  return {
+    listTickets: async () => unexpectedExecutorCall("TicketListingService.listTickets"),
+    searchTickets: async () => unexpectedExecutorCall("TicketListingService.searchTickets"),
   };
 }
 
@@ -107,13 +115,14 @@ export function createFakeSchemaDiscoveryService(state: FakeSchemaDiscoveryState
 
 export function createTestContainer(
   state: FakeSchemaDiscoveryState,
-  overrides: { tickets?: TicketService } = {},
+  overrides: { tickets?: TicketService; ticketListing?: TicketListingService } = {},
 ): CommandServices {
   return {
     executor: createUnexpectedExecutorFake(),
     context: createUnexpectedContextServiceFake(),
     schemaDiscovery: createFakeSchemaDiscoveryService(state),
     tickets: overrides.tickets ?? createUnexpectedTicketServiceFake(),
+    ticketListing: overrides.ticketListing ?? createUnexpectedTicketListingServiceFake(),
   };
 }
 
