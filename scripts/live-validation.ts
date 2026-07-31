@@ -36,6 +36,7 @@ const EXPECTED_TOOLS = [
   "remove_ticket_from_release",
 ] as const;
 
+const ADDITIONAL_CAPABILITIES = ["pending_initialization_resume"] as const;
 const CALL_TIMEOUT_MS = 120_000;
 const SEARCH_TIMEOUT_MS = 60_000;
 const INITIALIZATION_TIMEOUT_MS = 60_000;
@@ -43,13 +44,15 @@ const CLEANUP_ATTEMPTS = 3;
 const results = new Map<string, CapabilityResult>();
 const createdTaskGids = new Set<string>();
 let accessToken = "";
+let createOutcomeAmbiguous = false;
+let createAttempted = false;
 
 class EvidenceError extends Error {
-  constructor(
-    readonly status: Exclude<Status, "pass">,
-    message: string,
-  ) {
+  readonly status: Exclude<Status, "pass">;
+
+  constructor(status: Exclude<Status, "pass">, message: string) {
     super(message);
+    this.status = status;
   }
 }
 
@@ -202,6 +205,14 @@ async function cleanupCreatedTasks(token: string): Promise<void> {
       "fail",
       `authoritative cleanup verification failed for task GIDs ${failed.join(", ")}`,
     );
+  } else if (createOutcomeAmbiguous) {
+    record(
+      "verified_cleanup",
+      "unknown",
+      "a create returned no parseable result, so its task GID and cleanup state are unknown",
+    );
+  } else if (!createAttempted) {
+    record("verified_cleanup", "unknown", "no task was created, so cleanup was not exercised");
   } else {
     record("verified_cleanup", "pass", "every created task returned not_found on direct read");
   }
@@ -211,14 +222,18 @@ async function callTool(
   client: Client,
   name: string,
   argumentsValue: JsonObject,
+  timeoutMs = CALL_TIMEOUT_MS,
 ): Promise<JsonObject> {
+  if (timeoutMs <= 0) {
+    throw new EvidenceError("unknown", `${name} had no remaining validation time`);
+  }
   let response: Awaited<ReturnType<Client["callTool"]>>;
   try {
     response = await client.callTool({ name, arguments: argumentsValue }, undefined, {
-      timeout: CALL_TIMEOUT_MS,
+      timeout: timeoutMs,
     });
-  } catch {
-    throw new EvidenceError("unknown", `${name} timed out or returned no protocol evidence`);
+  } catch (error) {
+    throw new EvidenceError("unknown", `${name} protocol call failed: ${errorDetail(error)}`);
   }
 
   if (response.isError === true) {
@@ -229,7 +244,10 @@ async function callTool(
       typeof structured.error.code === "string"
         ? structured.error.code
         : "unparseable_error";
-    throw new EvidenceError("fail", `${name} returned MCP error ${code}`);
+    const retryable =
+      isObject(structured) && isObject(structured.error) && structured.error.retryable === true;
+    const status = retryable ? "unknown" : "fail";
+    throw new EvidenceError(status, `${name} returned MCP error ${code}`);
   }
   if (!isObject(response.structuredContent)) {
     throw new EvidenceError("unknown", `${name} omitted structured content`);
@@ -285,11 +303,16 @@ async function resumeInitialization(
   const expiresAt = Date.now() + INITIALIZATION_TIMEOUT_MS;
   let fields = initialFields;
   while (Date.now() < expiresAt) {
-    const result = await callTool(client, "update_ticket", {
-      teamspace_id: teamspaceId,
-      task_gid: gid,
-      ...fields,
-    });
+    const result = await callTool(
+      client,
+      "update_ticket",
+      {
+        teamspace_id: teamspaceId,
+        task_gid: gid,
+        ...fields,
+      },
+      Math.min(CALL_TIMEOUT_MS, expiresAt - Date.now()),
+    );
     if (result.status === "succeeded") {
       return result;
     }
@@ -314,11 +337,19 @@ async function createTicket(
   teamspaceId: string,
   fields: JsonObject,
 ): Promise<{ gid: string; result: JsonObject }> {
-  const result = await callTool(client, "create_ticket", {
-    teamspace_id: teamspaceId,
-    ...fields,
-  });
-  const created = mutationTask(result);
+  createAttempted = true;
+  let result: JsonObject;
+  let created: ReturnType<typeof mutationTask>;
+  try {
+    result = await callTool(client, "create_ticket", {
+      teamspace_id: teamspaceId,
+      ...fields,
+    });
+    created = mutationTask(result);
+  } catch (error) {
+    createOutcomeAmbiguous = true;
+    throw error;
+  }
   createdTaskGids.add(created.gid);
   if (created.pendingFields !== undefined) {
     const resumed = await resumeInitialization(
@@ -326,6 +357,11 @@ async function createTicket(
       teamspaceId,
       created.gid,
       created.pendingFields,
+    );
+    record(
+      "pending_initialization_resume",
+      "pass",
+      "resumed a built-server pending create through update_ticket",
     );
     return { gid: created.gid, result: resumed };
   }
@@ -343,7 +379,12 @@ async function validate(): Promise<void> {
       ...(!disposable ? ["ASANA_INTEGRATION_TEST_DISPOSABLE=true"] : []),
     ];
     record("configuration", "unknown", `required live evidence unavailable: ${missing.join(", ")}`);
-    for (const capability of ["protocol_initialize", "tool_discovery", ...EXPECTED_TOOLS]) {
+    for (const capability of [
+      "protocol_initialize",
+      "tool_discovery",
+      ...EXPECTED_TOOLS,
+      ...ADDITIONAL_CAPABILITIES,
+    ]) {
       record(capability, "unknown", "validation did not run without the required safe environment");
     }
     record("verified_cleanup", "unknown", "no write was attempted");
@@ -360,9 +401,7 @@ async function validate(): Promise<void> {
     ...(process.env.ASANA_MAX_SCAN_TASKS === undefined
       ? {}
       : { ASANA_MAX_SCAN_TASKS: process.env.ASANA_MAX_SCAN_TASKS }),
-    ...(process.env.ASANA_CREATE_TIMEOUT_SECONDS === undefined
-      ? {}
-      : { ASANA_CREATE_TIMEOUT_SECONDS: process.env.ASANA_CREATE_TIMEOUT_SECONDS }),
+    ASANA_CREATE_TIMEOUT_SECONDS: process.env.ASANA_CREATE_TIMEOUT_SECONDS ?? "1",
     ...(process.env.ASANA_REQUEST_TIMEOUT_MS === undefined
       ? {}
       : { ASANA_REQUEST_TIMEOUT_MS: process.env.ASANA_REQUEST_TIMEOUT_MS }),
@@ -494,23 +533,27 @@ async function validate(): Promise<void> {
     const runId = `mcp-live-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
     const ticketType = firstOptionName(schema, "ticket_type_field");
     const label = firstOptionName(schema, "labels_field");
+    const primaryFields =
+      assigneeGid === undefined
+        ? undefined
+        : {
+            name: `${runId} primary`,
+            description: `${runId} release validation`,
+            assignee: assigneeGid,
+            due_on: dateFromNow(14),
+            predicted_start_on: dateFromNow(2),
+            predicted_completion_on: dateFromNow(10),
+            ...(ticketType === undefined ? {} : { type: ticketType }),
+            ...(label === undefined ? {} : { labels: [label] }),
+          };
     let primaryGid: string | undefined;
     let dependencyGid: string | undefined;
 
     const primary = await probe("create_ticket", async () => {
-      if (assigneeGid === undefined) {
+      if (primaryFields === undefined) {
         throw new EvidenceError("unknown", "assignee evidence is unavailable");
       }
-      const created = await createTicket(client, teamspaceId, {
-        name: `${runId} primary`,
-        description: `${runId} release validation`,
-        assignee: assigneeGid,
-        due_on: dateFromNow(14),
-        predicted_start_on: dateFromNow(2),
-        predicted_completion_on: dateFromNow(10),
-        ...(ticketType === undefined ? {} : { type: ticketType }),
-        ...(label === undefined ? {} : { labels: [label] }),
-      });
+      const created = await createTicket(client, teamspaceId, primaryFields);
       primaryGid = created.gid;
       return {
         value: created,
@@ -532,6 +575,9 @@ async function validate(): Promise<void> {
       });
 
       await probe("read_ticket", async () => {
+        if (primaryFields === undefined) {
+          throw new EvidenceError("unknown", "requested lifecycle fields were unavailable");
+        }
         const value = await callTool(client, "read_ticket", {
           teamspace_id: teamspaceId,
           ticket_id: primary.gid,
@@ -542,6 +588,24 @@ async function validate(): Promise<void> {
         }
         if (assigneeGid !== undefined && objectField(ticket, "assignee").gid !== assigneeGid) {
           throw new EvidenceError("fail", "direct read did not return the requested assignee");
+        }
+        const lifecycleFields = [
+          "description",
+          "due_on",
+          "predicted_start_on",
+          "predicted_completion_on",
+          "type",
+        ] as const;
+        for (const field of lifecycleFields) {
+          if (field in primaryFields && ticket[field] !== primaryFields[field]) {
+            throw new EvidenceError("fail", `direct read did not return requested ${field}`);
+          }
+        }
+        if (
+          "labels" in primaryFields &&
+          JSON.stringify(ticket.labels) !== JSON.stringify(primaryFields.labels)
+        ) {
+          throw new EvidenceError("fail", "direct read did not return requested labels");
         }
         return { value, detail: "direct read confirmed the created ticket fields" };
       });
@@ -598,6 +662,13 @@ async function validate(): Promise<void> {
       dependencyGid = created.gid;
       return { value: created, detail: "created the second bounded-work ticket" };
     });
+    if (!results.has("pending_initialization_resume")) {
+      record(
+        "pending_initialization_resume",
+        "unknown",
+        "Asana initialized both creates before the one-second built-server polling bound",
+      );
+    }
 
     if (primary !== undefined && dependency !== undefined) {
       await probe("add_dependency", async () => {
@@ -672,45 +743,59 @@ async function validate(): Promise<void> {
       const expectedDependencyGid = dependencyGid;
       await probe("list_tickets", async () => {
         const expected = new Set([expectedPrimaryGid, expectedDependencyGid]);
-        const found = new Set<string>();
-        let cursor: string | undefined;
-        for (let page = 0; page < 20; page += 1) {
-          const value = await callTool(client, "list_tickets", {
-            teamspace_id: teamspaceId,
-            limit: 100,
-            ...(cursor === undefined ? {} : { cursor }),
-          });
-          if (value.truncated === true) {
-            throw new EvidenceError("unknown", "ticket listing evidence was truncated");
-          }
-          for (const ticket of arrayField(value, "tickets")) {
-            if (isObject(ticket) && typeof ticket.gid === "string" && expected.has(ticket.gid)) {
-              found.add(ticket.gid);
+        const expiresAt = Date.now() + SEARCH_TIMEOUT_MS;
+        while (Date.now() < expiresAt) {
+          const found = new Set<string>();
+          let cursor: string | undefined;
+          for (let page = 0; page < 20; page += 1) {
+            const value = await callTool(
+              client,
+              "list_tickets",
+              {
+                teamspace_id: teamspaceId,
+                limit: 100,
+                ...(cursor === undefined ? {} : { cursor }),
+              },
+              Math.min(CALL_TIMEOUT_MS, expiresAt - Date.now()),
+            );
+            if (value.truncated === true) {
+              throw new EvidenceError("unknown", "ticket listing evidence was truncated");
             }
+            for (const ticket of arrayField(value, "tickets")) {
+              if (isObject(ticket) && typeof ticket.gid === "string" && expected.has(ticket.gid)) {
+                found.add(ticket.gid);
+              }
+            }
+            if (found.size === expected.size) {
+              return { value, detail: "bounded pagination returned both created tickets" };
+            }
+            if (value.next_cursor === null) {
+              break;
+            }
+            if (typeof value.next_cursor !== "string") {
+              throw new EvidenceError("unknown", "ticket listing cursor was unparseable");
+            }
+            cursor = value.next_cursor;
           }
-          if (found.size === expected.size) {
-            return { value, detail: "bounded pagination returned both created tickets" };
-          }
-          if (value.next_cursor === null) {
-            break;
-          }
-          if (typeof value.next_cursor !== "string") {
-            throw new EvidenceError("unknown", "ticket listing cursor was unparseable");
-          }
-          cursor = value.next_cursor;
+          await delay(2_000);
         }
-        throw new EvidenceError("fail", "bounded listing did not return both created tickets");
+        throw new EvidenceError("unknown", "listing did not expose both tickets within the bound");
       });
 
       await probe("search_tickets", async () => {
         const expiresAt = Date.now() + SEARCH_TIMEOUT_MS;
         while (Date.now() < expiresAt) {
-          const value = await callTool(client, "search_tickets", {
-            teamspace_id: teamspaceId,
-            text: runId,
-            compact: true,
-            limit: 20,
-          });
+          const value = await callTool(
+            client,
+            "search_tickets",
+            {
+              teamspace_id: teamspaceId,
+              text: runId,
+              compact: true,
+              limit: 20,
+            },
+            Math.min(CALL_TIMEOUT_MS, expiresAt - Date.now()),
+          );
           if (value.truncated === true) {
             throw new EvidenceError("unknown", "search evidence was truncated");
           }
@@ -763,7 +848,7 @@ async function validate(): Promise<void> {
 }
 
 function fillMissingCapabilities(): void {
-  for (const capability of EXPECTED_TOOLS) {
+  for (const capability of [...EXPECTED_TOOLS, ...ADDITIONAL_CAPABILITIES]) {
     if (!results.has(capability)) {
       record(capability, "unknown", "prerequisite evidence was unavailable");
     }
@@ -791,6 +876,7 @@ async function main(): Promise<void> {
     "protocol_initialize",
     "tool_discovery",
     ...EXPECTED_TOOLS,
+    ...ADDITIONAL_CAPABILITIES,
     "verified_cleanup",
     ...[...results.keys()].filter(
       (name) =>
@@ -798,7 +884,8 @@ async function main(): Promise<void> {
         name !== "protocol_initialize" &&
         name !== "tool_discovery" &&
         name !== "verified_cleanup" &&
-        !EXPECTED_TOOLS.includes(name as (typeof EXPECTED_TOOLS)[number]),
+        !EXPECTED_TOOLS.includes(name as (typeof EXPECTED_TOOLS)[number]) &&
+        !ADDITIONAL_CAPABILITIES.includes(name as (typeof ADDITIONAL_CAPABILITIES)[number]),
     ),
   ];
   const ordered = orderedNames

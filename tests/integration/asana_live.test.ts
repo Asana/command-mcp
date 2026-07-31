@@ -16,6 +16,8 @@ import {
 const SUITE_TIMEOUT_MS = 240_000;
 const SEARCH_TIMEOUT_MS = 60_000;
 const INITIALIZATION_TIMEOUT_MS = 60_000;
+const LIFECYCLE_WORK_TIMEOUT_MS = 300_000;
+const LIFECYCLE_TEST_TIMEOUT_MS = 600_000;
 const gate = readIntegrationEnvironment(process.env);
 const environment = gate.ready ? gate.environment : undefined;
 const writesEnabled = environment?.disposable === true;
@@ -41,15 +43,16 @@ async function resumePendingTicket(
   snapshot: DiscoveryResult,
   taskGid: string,
   fields: UpdateTicketFields,
+  workDeadlineMs: number,
 ): Promise<void> {
-  const expiresAt = Date.now() + INITIALIZATION_TIMEOUT_MS;
+  const expiresAt = Math.min(workDeadlineMs, Date.now() + INITIALIZATION_TIMEOUT_MS);
   let pendingFields = fields;
   while (Date.now() < expiresAt) {
     const result = await services.tickets.updateTicket(
       taskGid,
       pendingFields,
       snapshot,
-      deadline(),
+      workDeadlineMs,
     );
     if (result.status === "succeeded") {
       return;
@@ -66,12 +69,19 @@ async function createAndInitialize(
   cleanup: CreatedTaskCleanup,
   snapshot: DiscoveryResult,
   fields: CreateTicketFields,
+  workDeadlineMs: number,
 ): Promise<{ gid: string; wasPending: boolean }> {
-  const result = await creator.createTicket(fields, snapshot, deadline());
+  const result = await creator.createTicket(fields, snapshot, workDeadlineMs);
   const gid = result.status === "succeeded" ? result.data.ticket.gid : result.data.task_gid;
   cleanup.track(gid);
   if (result.status === "pending") {
-    await resumePendingTicket(services, snapshot, gid, result.data.pending_updates.update_ticket);
+    await resumePendingTicket(
+      services,
+      snapshot,
+      gid,
+      result.data.pending_updates.update_ticket,
+      workDeadlineMs,
+    );
   }
   return { gid, wasPending: result.status === "pending" };
 }
@@ -80,32 +90,38 @@ async function expectListed(
   services: CommandServices,
   snapshot: DiscoveryResult,
   expectedGids: readonly string[],
+  workDeadlineMs: number,
 ): Promise<void> {
-  const found = new Set<string>();
-  let cursor: string | undefined;
-  for (let page = 0; page < 20; page += 1) {
-    const result = await services.ticketListing.listTickets(
-      {
-        limit: 100,
-        ...(cursor === undefined ? {} : { cursor }),
-      },
-      snapshot,
-      deadline(),
-    );
-    for (const ticket of result.tickets) {
-      if (expectedGids.includes(ticket.gid)) {
-        found.add(ticket.gid);
+  const expiresAt = Math.min(workDeadlineMs, Date.now() + SEARCH_TIMEOUT_MS);
+  while (Date.now() < expiresAt) {
+    const found = new Set<string>();
+    let cursor: string | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const result = await services.ticketListing.listTickets(
+        {
+          limit: 100,
+          ...(cursor === undefined ? {} : { cursor }),
+        },
+        snapshot,
+        workDeadlineMs,
+      );
+      expect(result.truncated).toBe(false);
+      for (const ticket of result.tickets) {
+        if (expectedGids.includes(ticket.gid)) {
+          found.add(ticket.gid);
+        }
       }
+      if (found.size === expectedGids.length) {
+        return;
+      }
+      if (result.next_cursor === null) {
+        break;
+      }
+      cursor = result.next_cursor;
     }
-    if (found.size === expectedGids.length) {
-      return;
-    }
-    if (result.next_cursor === null) {
-      break;
-    }
-    cursor = result.next_cursor;
+    await delay(2_000);
   }
-  expect([...found].sort()).toEqual([...expectedGids].sort());
+  throw new Error("Created tickets did not become visible in bounded Teamspace listing");
 }
 
 async function expectEventuallySearchable(
@@ -113,8 +129,9 @@ async function expectEventuallySearchable(
   snapshot: DiscoveryResult,
   searchText: string,
   expectedGids: readonly string[],
+  workDeadlineMs: number,
 ): Promise<void> {
-  const expiresAt = Date.now() + SEARCH_TIMEOUT_MS;
+  const expiresAt = Math.min(workDeadlineMs, Date.now() + SEARCH_TIMEOUT_MS);
   while (Date.now() < expiresAt) {
     const result = await services.ticketListing.searchTickets(
       {
@@ -123,7 +140,7 @@ async function expectEventuallySearchable(
         limit: 20,
       },
       snapshot,
-      deadline(),
+      workDeadlineMs,
     );
     const gids = new Set(result.matches.map((ticket) => ticket.gid));
     if (expectedGids.every((gid) => gids.has(gid))) {
@@ -168,11 +185,12 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
       const services = buildServices(config);
       const cleanup = new CreatedTaskCleanup(services.executor, services);
       const runId = `mcp-live-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+      const workDeadlineMs = Date.now() + LIFECYCLE_WORK_TIMEOUT_MS;
 
       try {
         const snapshot = await services.schemaDiscovery.discover(
           environment.teamspaceId,
-          deadline(),
+          workDeadlineMs,
         );
         const me = await currentUser(environment, snapshot.workspace.gid);
         const createFields: CreateTicketFields = {
@@ -196,8 +214,13 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           cleanup,
           snapshot,
           createFields,
+          workDeadlineMs,
         );
-        const primaryRead = await services.tickets.readTicket(primary.gid, snapshot, deadline());
+        const primaryRead = await services.tickets.readTicket(
+          primary.gid,
+          snapshot,
+          workDeadlineMs,
+        );
         expect(primaryRead.ticket).toMatchObject({
           name: createFields.name,
           description: createFields.description,
@@ -216,23 +239,30 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
         const pendingCreator = createTicketService(services.executor, {
           createTimeoutMs: 0,
         });
-        const dependency = await createAndInitialize(pendingCreator, services, cleanup, snapshot, {
-          name: `${runId} dependency`,
-          description: `${runId} forced pending initialization`,
-        });
+        const dependency = await createAndInitialize(
+          pendingCreator,
+          services,
+          cleanup,
+          snapshot,
+          {
+            name: `${runId} dependency`,
+            description: `${runId} forced pending initialization`,
+          },
+          workDeadlineMs,
+        );
         expect(dependency.wasPending).toBe(true);
 
         const commentText = `${runId} verified comment`;
         const addedComment = await services.comments.addComment(
           { ticketId: primary.gid, text: commentText },
           snapshot,
-          deadline(),
+          workDeadlineMs,
         );
         expect(addedComment.outcome).toBe("comment_added");
         const comments = await services.comments.getComments(
           { ticketId: primary.gid, limit: 100 },
           snapshot,
-          deadline(),
+          workDeadlineMs,
         );
         expect(comments.comments.some((comment) => comment.text === commentText)).toBe(true);
 
@@ -248,7 +278,7 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           primary.gid,
           release.gid,
           snapshot,
-          deadline(),
+          workDeadlineMs,
         );
         expect(
           addedRelease.data.memberships.some((entry: { gid: string }) => entry.gid === release.gid),
@@ -257,7 +287,7 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           primary.gid,
           release.gid,
           snapshot,
-          deadline(),
+          workDeadlineMs,
         );
         expect(
           removedRelease.data.memberships.some(
@@ -269,7 +299,7 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           primary.gid,
           dependency.gid,
           snapshot,
-          deadline(),
+          workDeadlineMs,
         );
         expect(
           addedDependency.data.dependencies.some(
@@ -280,7 +310,7 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           primary.gid,
           dependency.gid,
           snapshot,
-          deadline(),
+          workDeadlineMs,
         );
         expect(
           removedDependency.data.dependencies.some(
@@ -295,7 +325,7 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
             completed: true,
           },
           snapshot,
-          deadline(),
+          workDeadlineMs,
         );
         expect(update.status).toBe("succeeded");
         if (update.status === "succeeded") {
@@ -303,16 +333,22 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           expect(update.data.ticket.name).toBe(`${runId} primary updated`);
         }
 
-        await expectListed(services, snapshot, [primary.gid, dependency.gid]);
-        await expectEventuallySearchable(services, snapshot, runId, [primary.gid, dependency.gid]);
+        await expectListed(services, snapshot, [primary.gid, dependency.gid], workDeadlineMs);
+        await expectEventuallySearchable(
+          services,
+          snapshot,
+          runId,
+          [primary.gid, dependency.gid],
+          workDeadlineMs,
+        );
 
         if (environment.secondTeamspaceId !== undefined) {
           const secondSnapshot = await services.schemaDiscovery.discover(
             environment.secondTeamspaceId,
-            deadline(),
+            workDeadlineMs,
           );
           await expect(
-            services.tickets.readTicket(primary.gid, secondSnapshot, deadline()),
+            services.tickets.readTicket(primary.gid, secondSnapshot, workDeadlineMs),
           ).rejects.toMatchObject({ code: "out_of_scope" });
         } else {
           console.warn(
@@ -323,6 +359,6 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
         await cleanup.run();
       }
     },
-    SUITE_TIMEOUT_MS,
+    LIFECYCLE_TEST_TIMEOUT_MS,
   );
 });

@@ -22,7 +22,7 @@
     "lint": "biome check src tests scripts",
     "test": "vitest run --exclude 'tests/integration/**'",
     "test:integration": "vitest run tests/integration",
-    "validate:live": "npm run build && node --experimental-strip-types scripts/live-validation.ts",
+    "validate:live": "npm run build && tsup scripts/live-validation.ts --format esm --platform node --target node22 --out-dir scratch/live-validation --clean && node scratch/live-validation/live-validation.js",
     "check": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {
