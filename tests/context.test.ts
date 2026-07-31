@@ -10,7 +10,6 @@ import type {
 } from "asana";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { TEAMSPACE_CANDIDATE_FIELDS } from "../src/asana_contracts.js";
 import type {
   AsanaHttpResult,
   AsanaRequestExecutorPort,
@@ -190,7 +189,7 @@ describe("context service", () => {
     expect(observedOptions).toEqual({
       count: 2,
       query: "plat",
-      opt_fields: TEAMSPACE_CANDIDATE_FIELDS,
+      opt_fields: "gid,name",
     });
     expect(result).toEqual({
       candidates: [
@@ -230,7 +229,7 @@ describe("context service", () => {
 
     expect(observedOptions).toEqual({
       count: 2,
-      opt_fields: TEAMSPACE_CANDIDATE_FIELDS,
+      opt_fields: "gid,name",
     });
     expect(observedOptions).not.toHaveProperty("query");
     expect(result.schema_validated).toBe(false);

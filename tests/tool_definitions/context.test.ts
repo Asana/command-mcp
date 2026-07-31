@@ -127,6 +127,17 @@ describe("context tool definitions", () => {
     );
   });
 
+  it("requires a URL on every find_teamspaces candidate", () => {
+    const output = findTool("find_teamspaces").outputSchema;
+    const resultWithoutUrl = output.safeParse({
+      candidates: [{ gid: TEAMSPACE_ID, name: "Engineering Teamspace" }],
+      schema_validated: false,
+      truncated: false,
+    });
+
+    expect(resultWithoutUrl.success).toBe(false);
+  });
+
   it("lists workspaces without triggering schema discovery", async () => {
     let observedDeadline: number | null = null;
     const context = createUnexpectedContextService({

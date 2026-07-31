@@ -20,8 +20,12 @@ export const WorkspaceListSchema = z.object({
   workspaces: z.array(WorkspaceSchema),
 });
 
+const TeamspaceCandidateReferenceSchema = TeamspaceReferenceSchema.extend({
+  url: z.string().url(),
+});
+
 export const TeamspaceCandidatesSchema = z.object({
-  candidates: z.array(TeamspaceReferenceSchema),
+  candidates: z.array(TeamspaceCandidateReferenceSchema),
   schema_validated: z.literal(false),
   truncated: z.boolean(),
 });
