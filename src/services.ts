@@ -4,7 +4,7 @@ import {
   type AsanaRequestExecutorPort,
 } from "./asana_gateway.js";
 import type { Config } from "./config.js";
-import { createContextService, type ContextService } from "./context.js";
+import { type ContextService, createContextService } from "./context.js";
 import { createSchemaDiscoveryService, type SchemaDiscoveryService } from "./schema_discovery.js";
 
 export type CommandServices = {

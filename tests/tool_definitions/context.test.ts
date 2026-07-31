@@ -4,8 +4,8 @@ import type { ContextService } from "../../src/context.js";
 import { createContextService } from "../../src/context.js";
 import { DiscoveryResultSchema, type SchemaDiscoveryService } from "../../src/schema_discovery.js";
 import type { CommandServices } from "../../src/services.js";
-import type { CallContext, ToolDefinition } from "../../src/tool_registry.js";
 import { contextToolDefinitions } from "../../src/tool_definitions/context.js";
+import type { CallContext, ToolDefinition } from "../../src/tool_registry.js";
 import {
   buildDiscoverySnapshot,
   createUnexpectedExecutorFake,
