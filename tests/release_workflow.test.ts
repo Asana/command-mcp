@@ -8,7 +8,7 @@ describe("release workflow", () => {
     expect(workflow).toContain("tags:");
     expect(workflow).toContain('- "v*"');
     expect(workflow).toContain("contents: write");
-    expect(workflow).toContain("v${packageJson.version}");
+    expect(workflow).toContain("v$" + "{packageJson.version}");
     expect(workflow).toContain("npm run check");
     expect(workflow).toContain("npm audit");
     expect(workflow).toContain("npm pack --dry-run");
@@ -16,8 +16,8 @@ describe("release workflow", () => {
   });
 
   it("executes and uploads the packed tarball", () => {
-    expect(workflow).toContain('npx --yes "$archive" doctor');
+    expect(workflow).toContain('npx --yes "$ARCHIVE" doctor');
     expect(workflow).toContain("softprops/action-gh-release@");
-    expect(workflow).toContain("files: ${{ steps.pack.outputs.archive }}");
+    expect(workflow).toContain("files: $" + "{{ steps.pack.outputs.archive }}");
   });
 });
