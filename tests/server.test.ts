@@ -44,6 +44,16 @@ describe("MCP server", () => {
     vi.restoreAllMocks();
   });
 
+  it("advertises canonical Command URL schemas in its initial instructions", () => {
+    expect(SERVER_INSTRUCTIONS).toContain(
+      "https://app.asana.com/1/{workspace_gid}/dev/space/{teamspace_gid}",
+    );
+    expect(SERVER_INSTRUCTIONS).toContain(
+      "https://app.asana.com/1/{workspace_gid}/dev/space/{teamspace_gid}/ticket/{ticket_gid}",
+    );
+    expect(SERVER_INSTRUCTIONS).not.toContain("https://app.asana.com/0/");
+  });
+
   it("assembles and advertises every tool in the contract order", async () => {
     expect(toolDefinitions.map((tool) => tool.name)).toEqual(EXPECTED_TOOL_ORDER);
 
