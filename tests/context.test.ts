@@ -196,12 +196,12 @@ describe("context service", () => {
         {
           gid: TEAMSPACE_GID,
           name: "Platform",
-          url: `https://app.asana.com/1/${WORKSPACE_GID}/dev/space/${TEAMSPACE_GID}/development`,
+          url: `https://app.asana.com/1/${WORKSPACE_GID}/dev/space/${TEAMSPACE_GID}`,
         },
         {
           gid: "1600000000000002",
           name: "Mobile",
-          url: `https://app.asana.com/1/${WORKSPACE_GID}/dev/space/1600000000000002/development`,
+          url: `https://app.asana.com/1/${WORKSPACE_GID}/dev/space/1600000000000002`,
         },
       ],
       schema_validated: false,

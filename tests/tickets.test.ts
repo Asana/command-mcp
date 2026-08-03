@@ -109,8 +109,6 @@ function task(snapshot: DiscoveryResult, overrides: Partial<Task> = {}): Task {
     completed_at: null,
     resource_subtype: "custom",
     notes: "Plain ticket description",
-    due_on: "2026-08-15",
-    permalink_url: `https://app.asana.com/0/0/${TICKET_GID}`,
     assignee: {
       gid: "1800000000000010",
       name: "Ada Lovelace",
@@ -138,6 +136,8 @@ describe("ticket resolver", () => {
       gid: TICKET_GID,
     });
     expect(observed).toEqual([{ gid: TICKET_GID, options: { opt_fields: FULL_TASK_FIELDS } }]);
+    expect(FULL_TASK_FIELDS.split(",")).not.toContain("due_on");
+    expect(FULL_TASK_FIELDS.split(",")).not.toContain("permalink_url");
   });
 
   it("resolves a short ID through the discovered workspace before the authoritative read", async () => {
@@ -272,7 +272,18 @@ describe("ticket resolver", () => {
   it("preserves request IDs when a read cannot be projected safely", async () => {
     const snapshot = buildDiscoverySnapshot(TEAMSPACE_ID);
     const getTask: TasksApi["getTaskWithHttpInfo"] = async () =>
-      singleResult(task(snapshot, { due_on: "2026-02-30" }));
+      singleResult(
+        task(snapshot, {
+          custom_fields: [
+            {
+              gid: snapshot.predicted_start_date_field.gid,
+              name: "Predicted Start",
+              resource_subtype: "date",
+              date_value: { date: "2026-02-30", date_time: null },
+            },
+          ],
+        }),
+      );
     const service = createTicketService(
       createExecutor(createResourceBundle({ getTask }), [], ["view-request"]),
     );
@@ -381,7 +392,6 @@ describe("ticket view", () => {
         name: "Ada Lovelace",
         email: "ada@example.com",
       },
-      due_on: "2026-08-15",
       predicted_start_on: "2026-08-01",
       predicted_completion_on: "2026-08-10",
       dependencies: [{ gid: "1700000000000011", name: "Ship request executor" }],
@@ -389,7 +399,7 @@ describe("ticket view", () => {
         { gid: RELEASE_GID, name: "August 2026" },
         { gid: OTHER_RELEASE_GID, name: "September 2026" },
       ],
-      url: `https://app.asana.com/0/0/${TICKET_GID}`,
+      url: `https://app.asana.com/1/${snapshot.workspace.gid}/dev/space/${snapshot.teamspace.gid}/ticket/${TICKET_GID}`,
     });
     expect(TicketViewSchema.parse(view)).toEqual(view);
   });

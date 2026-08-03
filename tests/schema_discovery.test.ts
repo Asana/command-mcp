@@ -30,7 +30,6 @@ type ProjectResponse = {
   gid: string;
   name: string;
   workspace: { gid: string; name: string };
-  permalink_url?: string;
   custom_fields?: Array<{
     gid: string;
     name: string;
@@ -255,7 +254,6 @@ function completeTeamspaceState(
       gid: TEAMSPACE_ID,
       name: "Command Teamspace",
       workspace: WORKSPACE,
-      permalink_url: `https://app.asana.com/1/${WORKSPACE.gid}/dev/space/${TEAMSPACE_ID}`,
       custom_fields:
         overrides.projectCustomFields ?? fieldDefinitions.map((entry) => entry.custom_field),
     },
@@ -293,6 +291,9 @@ describe("discoverTeamspaceSchema", () => {
     );
 
     expect(discovery.teamspace.gid).toBe(TEAMSPACE_ID);
+    expect(discovery.teamspace.url).toBe(
+      `https://app.asana.com/1/${WORKSPACE.gid}/dev/space/${TEAMSPACE_ID}`,
+    );
     expect(discovery.ticket_custom_type.name).toBe("Dev ticket");
     expect(discovery.ticket_short_id_field.id_prefix).toBe("CMD");
     expect(discovery.ticket_type_field?.gid).toBe("1200000000000006");

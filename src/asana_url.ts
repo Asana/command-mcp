@@ -1,11 +1,24 @@
 import { CommandError } from "./errors.js";
 
 const ASANA_APP_HOST = "app.asana.com";
+const ASANA_APP_ORIGIN = `https://${ASANA_APP_HOST}`;
 
 export type AsanaAppUrl = {
   url: URL;
   pathname: string;
 };
+
+export function commandTeamspaceUrl(workspaceGid: string, teamspaceGid: string): string {
+  return `${ASANA_APP_ORIGIN}/1/${workspaceGid}/dev/space/${teamspaceGid}`;
+}
+
+export function commandTicketUrl(
+  workspaceGid: string,
+  teamspaceGid: string,
+  ticketGid: string,
+): string {
+  return `${commandTeamspaceUrl(workspaceGid, teamspaceGid)}/ticket/${ticketGid}`;
+}
 
 function invalidAsanaUrl(message: string, details?: Record<string, unknown>): never {
   throw new CommandError("invalid_input", message, {

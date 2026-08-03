@@ -40,7 +40,6 @@ const VERIFICATION_MISMATCH_CASES: Array<[string, UpdateTicketFields]> = [
   ["type", { type: "feature" }],
   ["labels", { labels: { add: ["Urgent"] } }],
   ["assignee", { assignee: "ada@example.com" }],
-  ["due_on", { due_on: "2026-08-10" }],
   ["predicted_start_on", { predicted_start_on: "2026-08-11" }],
   ["predicted_completion_on", { predicted_completion_on: "2026-08-12" }],
 ];
@@ -161,8 +160,6 @@ function ticket(
     completed_at: null,
     resource_subtype: "custom",
     notes: "",
-    due_on: null,
-    permalink_url: `https://app.asana.com/0/0/${TASK_GID}`,
     assignee: null,
     projects: [{ gid: discovered.teamspace.gid, name: discovered.teamspace.name }],
     dependencies: [],
@@ -243,7 +240,6 @@ describe("create ticket mutation", () => {
       ticket(discovered),
       ticket(discovered, {
         notes: "Details",
-        due_on: "2026-08-10",
         assignee: { gid: "1800000000000001", name: "Ada", email: "ada@example.com" },
         custom_fields: [
           ...(ticket(discovered).custom_fields ?? []).filter(
@@ -300,7 +296,6 @@ describe("create ticket mutation", () => {
         type: "feature",
         labels: ["customer"],
         assignee: "ada@example.com",
-        due_on: "2026-08-10",
         predicted_start_on: "2026-08-01",
       },
       discovered,
@@ -315,7 +310,6 @@ describe("create ticket mutation", () => {
           name: "New ticket",
           notes: "Details",
           assignee: "ada@example.com",
-          due_on: "2026-08-10",
         },
       },
     ]);
@@ -378,7 +372,6 @@ describe("create ticket mutation", () => {
         name: "New ticket",
         description: "Details",
         assignee: "ada@example.com",
-        due_on: "2026-08-10",
       },
       discovered,
       1_000,
@@ -399,7 +392,6 @@ describe("create ticket mutation", () => {
             name: "New ticket",
             description: "Details",
             assignee: "ada@example.com",
-            due_on: "2026-08-10",
           },
         },
         retry_with: "update_ticket",
@@ -617,7 +609,6 @@ describe("update ticket mutation", () => {
     const observed = state();
     const writes: unknown[] = [];
     const current = ticket(discovered, {
-      due_on: "2026-08-10",
       assignee: { gid: "1800000000000001", name: "Ada" },
     });
     const reads = [current, ticket(discovered)];
@@ -638,7 +629,6 @@ describe("update ticket mutation", () => {
       TASK_GID,
       {
         assignee: null,
-        due_on: null,
         predicted_start_on: null,
         predicted_completion_on: null,
       },
@@ -650,7 +640,6 @@ describe("update ticket mutation", () => {
       {
         data: {
           assignee: null,
-          due_on: null,
           custom_fields: {
             [discovered.predicted_start_date_field.gid]: null,
             [discovered.predicted_completion_date_field.gid]: null,

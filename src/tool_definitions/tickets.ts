@@ -42,7 +42,7 @@ const listTickets = defineTeamspaceScopedTool({
   name: "list_tickets",
   title: "List tickets",
   description:
-    "Enumerate tickets in the selected Teamspace with bounded type, label, assignee, Release, and completion-status filtering plus opaque pagination. Use search_tickets instead for completion-date or due-date ranges.",
+    "Enumerate tickets in the selected Teamspace with bounded type, label, assignee, Release, and completion-status filtering plus opaque pagination. Use search_tickets instead for completion-date ranges.",
   input: ListTicketsInputSchema,
   output: ListTicketsOutputSchema,
   readOnly: true,
@@ -58,7 +58,7 @@ const searchTickets = defineTeamspaceScopedTool({
   name: "search_tickets",
   title: "Search tickets",
   description:
-    "Search tickets in the selected Teamspace using eventually consistent Asana workspace search, with a total result limit up to 1,000. Use this tool for completion-date or due-date ranges; results include created_at and completed_at. Set compact=true to return only gid, name, and those timestamps.",
+    "Search tickets in the selected Teamspace using eventually consistent Asana workspace search, with a total result limit up to 1,000. Use this tool for completion-date ranges; results include created_at and completed_at. Set compact=true to return only gid, name, and those timestamps.",
   input: SearchTicketsInputSchema,
   output: SearchTicketsOutputSchema,
   readOnly: true,

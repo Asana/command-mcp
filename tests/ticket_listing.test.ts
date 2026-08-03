@@ -142,8 +142,6 @@ function ticket(discovered: DiscoveryResult, gid: string, overrides: Partial<Tas
     completed_at: null,
     resource_subtype: "custom",
     notes: "",
-    due_on: null,
-    permalink_url: `https://app.asana.com/0/0/${gid}`,
     assignee: {
       gid: ASSIGNEE_GID,
       name: "Ada Lovelace",
@@ -444,8 +442,6 @@ describe("ticket search service", () => {
         text: "request id",
         assignee: "ada@example.com",
         completed: false,
-        "due_on.before": "2026-08-31",
-        "due_on.after": "2026-08-01",
         "completed_on.before": "2026-08-31",
         "completed_on.after": "2026-08-01",
         compact: false,

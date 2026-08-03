@@ -8,7 +8,7 @@ import {
   TaskSchema,
 } from "../asana_contracts.js";
 import type { AsanaRequestExecutorPort, AsanaRequestTrace } from "../asana_gateway.js";
-import { tryParseAsanaAppUrl } from "../asana_url.js";
+import { commandTicketUrl, tryParseAsanaAppUrl } from "../asana_url.js";
 import { CommandError } from "../errors.js";
 import {
   buildMutationResult,
@@ -71,14 +71,13 @@ export const TicketViewSchema = z.object({
   type: z.string().nullable().describe("Teamspace-local ticket type name or null"),
   labels: z.array(z.string()).describe("Teamspace-local label names"),
   assignee: AssigneeViewSchema.nullable().describe("Assigned Asana user or null"),
-  due_on: DateOnlySchema.nullable().describe("Due date or null"),
   predicted_start_on: DateOnlySchema.nullable().describe("Predicted start date or null"),
   predicted_completion_on: DateOnlySchema.nullable().describe("Predicted completion date or null"),
   dependencies: z.array(DependencyViewSchema).describe("Tasks blocking this ticket"),
   releases: z
     .array(ReleaseMembershipSchema)
     .describe("Releases referenced by this Teamspace that contain the ticket"),
-  url: z.string().url().nullable().describe("Canonical Asana task URL or null"),
+  url: z.string().url().describe("Canonical Command ticket URL"),
 });
 
 export const ReadTicketOutputSchema = ProvenanceSchema.extend({
@@ -296,12 +295,11 @@ export function projectTicketView(task: Task, snapshot: DiscoveryResult): Ticket
     type: typeField?.enum_value?.name ?? null,
     labels: (labelsField?.multi_enum_values ?? []).map((option) => option.name),
     assignee,
-    due_on: task.due_on ?? null,
     predicted_start_on: projectedDate(task, snapshot.predicted_start_date_field.gid),
     predicted_completion_on: projectedDate(task, snapshot.predicted_completion_date_field.gid),
     dependencies,
     releases: currentReleaseMemberships(task.projects, snapshot),
-    url: task.permalink_url ?? null,
+    url: commandTicketUrl(snapshot.workspace.gid, snapshot.teamspace.gid, task.gid),
   });
 }
 
@@ -312,7 +310,6 @@ type UpdateTaskData = {
   notes?: string;
   completed?: boolean;
   assignee?: string | null;
-  due_on?: string | null;
   custom_fields?: Record<string, UpdateCustomFieldValue>;
 };
 
@@ -417,9 +414,6 @@ function buildUpdateBody(
   if (fields.assignee !== undefined) {
     data.assignee = fields.assignee;
   }
-  if (fields.due_on !== undefined) {
-    data.due_on = fields.due_on;
-  }
 
   const customFields: Record<string, UpdateCustomFieldValue> = {};
   if (fields.type !== undefined) {
@@ -472,9 +466,6 @@ function requestedCreateVerification(
   }
   if (fields.assignee !== undefined) {
     requested.assignee = fields.assignee;
-  }
-  if (fields.due_on !== undefined) {
-    requested.due_on = fields.due_on;
   }
   return requested;
 }
@@ -564,9 +555,6 @@ function mismatchedFields(
       mismatches.push("assignee");
     }
   }
-  if (requested.due_on !== undefined && actual.due_on !== requested.due_on) {
-    mismatches.push("due_on");
-  }
   if (
     requested.predicted_start_on !== undefined &&
     actual.predicted_start_on !== requested.predicted_start_on
@@ -623,9 +611,6 @@ function requireVerificationFields(
   }
   if (requested.assignee !== undefined && task.assignee === undefined) {
     throw domainError("schema_drift", "Asana task response omitted the assignee", trace);
-  }
-  if (requested.due_on !== undefined && task.due_on === undefined) {
-    throw domainError("schema_drift", "Asana task response omitted the due date", trace);
   }
   if (requested.type !== undefined) {
     const field = requireVerificationCustomField(
@@ -898,7 +883,6 @@ export function createTicketService(
       name: fields.name,
       ...(fields.description === undefined ? {} : { notes: fields.description }),
       ...(fields.assignee === undefined ? {} : { assignee: fields.assignee }),
-      ...(fields.due_on === undefined ? {} : { due_on: fields.due_on }),
     };
     const created = await executor.write(
       TicketLookupSchema,

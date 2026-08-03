@@ -22,6 +22,7 @@ import type {
   AsanaRequestOptions,
   AsanaRequestTrace,
 } from "./asana_gateway.js";
+import { commandTeamspaceUrl } from "./asana_url.js";
 import { CommandError } from "./errors.js";
 import { collectPages } from "./pagination/scanner.js";
 import {
@@ -527,7 +528,7 @@ export async function discoverTeamspaceSchema(
   const teamspace: TeamspaceReference = {
     gid: project.gid,
     name: project.name,
-    ...(project.permalink_url === undefined ? {} : { url: project.permalink_url }),
+    url: commandTeamspaceUrl(project.workspace.gid, project.gid),
   };
 
   const discovery: DiscoveryResult = {
