@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify tag matches package version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from "node:fs/promises";
+
+          const packageJson = JSON.parse(await readFile("package.json", "utf8"));
+          const expectedTag = `v${packageJson.version}`;
+          if (process.env.RELEASE_TAG !== expectedTag) {
+            throw new Error(`Release tag ${process.env.RELEASE_TAG} does not match ${expectedTag}`);
+          }
+          NODE
+
+      - run: npm ci
+
+      - run: npm run check
+
+      - run: npm audit
+
+      - run: npm pack --dry-run
+
+      - name: Pack release archive
+        id: pack
+        run: |
+          npm pack --json > pack-result.json
+          archive="$(node --input-type=module <<'NODE'
+          import { readFile } from "node:fs/promises";
+
+          const result = JSON.parse(await readFile("pack-result.json", "utf8"));
+          if (result.length !== 1 || typeof result[0]?.filename !== "string") {
+            throw new Error("npm pack did not report exactly one archive");
+          }
+          process.stdout.write(result[0].filename);
+          NODE
+          )"
+          version="$(node -p "require('./package.json').version")"
+          expected_archive="asana-command-mcp-${version}.tgz"
+          if [[ "$archive" != "$expected_archive" || ! -f "$archive" ]]; then
+            echo "Expected $expected_archive, received $archive" >&2
+            exit 1
+          fi
+          echo "archive=${PWD}/${archive}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify packed executable through npx
+        env:
+          ARCHIVE: ${{ steps.pack.outputs.archive }}
+        run: |
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+          set +e
+          output="$(cd "$workdir" && ASANA_ACCESS_TOKEN= npm_config_loglevel=error npx --yes --package "$ARCHIVE" asana-command-mcp doctor 2>&1)"
+          status=$?
+          set -e
+          if [[ $status -ne 1 ]]; then
+            echo "Expected doctor to reject the intentionally empty token, received exit $status" >&2
+            echo "$output" >&2
+            exit 1
+          fi
+          DOCTOR_OUTPUT="$output" node --input-type=module <<'NODE'
+          const payload = JSON.parse(process.env.DOCTOR_OUTPUT);
+          if (payload.error?.code !== "invalid_configuration") {
+            throw new Error(`Unexpected doctor output: ${process.env.DOCTOR_OUTPUT}`);
+          }
+          NODE
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.pack.outputs.archive }}
+          generate_release_notes: true
