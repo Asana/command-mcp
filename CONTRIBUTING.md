@@ -76,3 +76,29 @@ For release changes, also run these commands directly and preserve their complet
 npm audit
 npm pack --dry-run
 ```
+
+## Maintainer release process
+
+Releases are executable npm tarballs hosted by GitHub Releases; this package is not published to the npm registry.
+
+1. Prepare and merge a release pull request that updates `package.json` and `package-lock.json` to the same version and records the release in `CHANGELOG.md`.
+2. On the exact release commit, run the complete release checks:
+
+   ```sh
+   npm ci
+   npm run check
+   npm audit
+   npm pack --dry-run
+   ```
+
+3. Tag that commit with `v` followed by the exact `package.json` version, then push only that tag:
+
+   ```sh
+   version="$(node -p "require('./package.json').version")"
+   git tag -a "v${version}" -m "Release v${version}"
+   git push origin "v${version}"
+   ```
+
+The tag-triggered release workflow independently checks the tag, repeats all release checks, creates `asana-command-mcp-<version>.tgz`, and executes that packed archive through `npx` from a temporary directory. Only then does it create the GitHub Release and attach the archive. A tag that does not exactly match `v<package.json version>` fails without publishing a release.
+
+Do not move or reuse a published version tag. If a release needs a code or packaging correction, prepare a new version and tag.
