@@ -74,7 +74,7 @@ jobs:
           workdir="$(mktemp -d)"
           trap 'rm -rf "$workdir"' EXIT
           set +e
-          output="$(cd "$workdir" && ASANA_ACCESS_TOKEN= npx --yes "$ARCHIVE" doctor 2>&1)"
+          output="$(cd "$workdir" && ASANA_ACCESS_TOKEN= npm_config_loglevel=error npx --yes --package "$ARCHIVE" asana-command-mcp doctor 2>&1)"
           status=$?
           set -e
           if [[ $status -ne 1 ]]; then

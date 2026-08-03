@@ -24,7 +24,9 @@ Register the server with an MCP client using the raw release URL. Replace the to
       "command": "npx",
       "args": [
         "--yes",
-        "https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz"
+        "--package",
+        "https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz",
+        "asana-command-mcp"
       ],
       "env": {
         "ASANA_ACCESS_TOKEN": "replace-with-your-personal-access-token"
@@ -34,7 +36,7 @@ Register the server with an MCP client using the raw release URL. Replace the to
 }
 ```
 
-The URL pins both the release tag and archive version so an upstream release cannot silently change the executable. `npx --yes` downloads and caches the archive without prompting. Restart the client after changing its MCP configuration.
+The URL pins both the release tag and archive version so an upstream release cannot silently change the executable. `npx --yes --package` downloads and caches the archive without prompting, then runs its `asana-command-mcp` binary. Restart the client after changing its MCP configuration.
 
 ### Claude Code
 
@@ -46,7 +48,7 @@ claude mcp add \
   --transport stdio \
   --scope user \
   asana-command \
-  -- npx --yes https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz
+  -- npx --yes --package https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz asana-command-mcp
 ```
 Confirm the registration with:
 
@@ -69,7 +71,7 @@ Add this entry to `$CODEX_HOME/config.toml` (by default `~/.codex/config.toml`):
 ```toml
 [mcp_servers.asana-command]
 command = "npx"
-args = ["--yes", "https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz"]
+args = ["--yes", "--package", "https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz", "asana-command-mcp"]
 env_vars = ["ASANA_ACCESS_TOKEN"]
 ```
 
@@ -133,7 +135,7 @@ Every scoped call performs a fresh Teamspace schema discovery. Ticket identifier
 Run `doctor` first when credentials, access, or Teamspace schema discovery is not working. The command writes one JSON object to stdout on success:
 
 ```sh
-npx --yes https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz doctor
+npx --yes --package https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz asana-command-mcp doctor
 ```
 
 Credentials-only output has this shape:
@@ -156,7 +158,7 @@ Credentials-only output has this shape:
 Pass a Teamspace project GID or its `https://app.asana.com/.../dev/space/...` URL to check authentication, schema discovery, and the required Asana custom-types opt-in:
 
 ```sh
-npx --yes https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz doctor "<teamspace-id-or-url>"
+npx --yes --package https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz asana-command-mcp doctor "<teamspace-id-or-url>"
 ```
 
 The Teamspace form has this shape:
