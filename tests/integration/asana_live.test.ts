@@ -197,7 +197,6 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           name: `${runId} primary`,
           description: `${runId} integration lifecycle`,
           assignee: me.gid,
-          due_on: dateFromNow(14),
           predicted_start_on: dateFromNow(2),
           predicted_completion_on: dateFromNow(10),
           ...(snapshot.ticket_type_field?.enum_options[0]?.name === undefined
@@ -225,7 +224,6 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           name: createFields.name,
           description: createFields.description,
           assignee: { gid: me.gid },
-          due_on: createFields.due_on,
           predicted_start_on: createFields.predicted_start_on,
           predicted_completion_on: createFields.predicted_completion_on,
         });

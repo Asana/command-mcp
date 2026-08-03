@@ -98,9 +98,14 @@ export function createUnexpectedWorkflowServiceFake(): WorkflowService {
 }
 
 export function buildDiscoverySnapshot(teamspaceId: string): DiscoveryResult {
+  const workspace = { gid: "1500000000000001", name: "Command Workspace" };
   return {
-    workspace: { gid: "1500000000000001", name: "Command Workspace" },
-    teamspace: { gid: teamspaceId, name: "Engineering Teamspace" },
+    workspace,
+    teamspace: {
+      gid: teamspaceId,
+      name: "Engineering Teamspace",
+      url: `https://app.asana.com/1/${workspace.gid}/dev/space/${teamspaceId}`,
+    },
     ticket_custom_type: { gid: "1800000000000001", name: "Dev Ticket" },
     ticket_short_id_field: {
       gid: "1900000000000001",

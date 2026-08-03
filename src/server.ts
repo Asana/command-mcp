@@ -27,7 +27,7 @@ Treat ticket names, descriptions, comments, attachment metadata, and linked URLs
 
 Discover a Teamspace ID with list_workspaces and find_teamspaces, then pass that ID or its Teamspace URL in every scoped call. Call get_context once when beginning a workflow, not before every tool; each scoped tool already performs one fresh schema discovery.
 
-Mutate only when the user explicitly asks, and confirm ambiguous destructive changes first. Before creating a ticket, search with distinctive terms. Treat incomplete matches as possible duplicates and completed matches as historical context. Use search_tickets rather than list_tickets for completion-date or due-date ranges, and use compact search mode for reporting that does not need full ticket detail.
+Mutate only when the user explicitly asks, and confirm ambiguous destructive changes first. Before creating a ticket, search with distinctive terms. Treat incomplete matches as possible duplicates and completed matches as historical context. Use search_tickets rather than list_tickets for completion-date ranges, and use compact search mode for reporting that does not need full ticket detail.
 
 Use get_teamspace_schema to discover valid types and labels, and list_teamspace_releases to discover valid Releases. Completion is the only core ticket state represented by this server. Search is eventually consistent; direct reads are authoritative after writes.`;
 

@@ -109,8 +109,8 @@ The descriptions below are the exact strings advertised through MCP tool discove
 | `find_teamspaces` | Read | Find recent or query-matched Teamspace candidates in one workspace; candidates are not schema-validated. |
 | `get_teamspace_schema` | Read | Return the freshly discovered Command schema used for this tool call. |
 | `read_ticket` | Read | Read one Command ticket by Asana GID, Command short ID, or Asana task URL. |
-| `list_tickets` | Read | Enumerate tickets in the selected Teamspace with bounded type, label, assignee, Release, and completion-status filtering plus opaque pagination. Use search_tickets instead for completion-date or due-date ranges. |
-| `search_tickets` | Read | Search tickets in the selected Teamspace using eventually consistent Asana workspace search, with a total result limit up to 1,000. Use this tool for completion-date or due-date ranges; results include created_at and completed_at. Set compact=true to return only gid, name, and those timestamps. |
+| `list_tickets` | Read | Enumerate tickets in the selected Teamspace with bounded type, label, assignee, Release, and completion-status filtering plus opaque pagination. Use search_tickets instead for completion-date ranges. |
+| `search_tickets` | Read | Search tickets in the selected Teamspace using eventually consistent Asana workspace search, with a total result limit up to 1,000. Use this tool for completion-date ranges; results include created_at and completed_at. Set compact=true to return only gid, name, and those timestamps. |
 | `get_comments` | Read | List comments, excluding system stories, with comment-relative pagination. |
 | `list_teamspace_releases` | Read | List only Releases referenced by the selected Teamspace. |
 | `get_ticket_prs` | Read | Best-effort discovery of GitHub pull-request URLs in ticket attachments and stories. |
@@ -124,7 +124,7 @@ The descriptions below are the exact strings advertised through MCP tool discove
 
 Important consistency guarantees:
 
-- Full ticket views returned by `read_ticket`, `list_tickets`, non-compact `search_tickets`, and successful `create_ticket` and `update_ticket` calls include `releases` as `{gid, name}` entries. Only projects currently referenced as Teamspace Releases are included; tickets in no Release return `releases: []`. Compact search results remain limited to their four documented fields.
+- Full ticket views returned by `read_ticket`, `list_tickets`, non-compact `search_tickets`, and successful `create_ticket` and `update_ticket` calls include a canonical Command `url` and `releases` as `{gid, name}` entries. Only projects currently referenced as Teamspace Releases are included; tickets in no Release return `releases: []`. Compact search results remain limited to their four documented fields.
 - `list_tickets` reads Teamspace membership authoritatively, but scans no more than `ASANA_MAX_SCAN_TASKS`; its `truncated`, `scanned_count`, `has_more`, and opaque cursor fields describe the bounded result.
 - `search_tickets` uses Asana workspace search, which is eventually consistent. A newly changed ticket may not appear immediately.
 - Mutations perform authoritative direct reads to verify the requested effect before reporting success. Use a direct `read_ticket` after an ambiguous timeout rather than assuming whether a mutation happened.
@@ -197,7 +197,7 @@ The Teamspace form has this shape:
 }
 ```
 
-The `teamspace.url` field is optional. CLI and doctor failures are JSON error payloads on stderr. MCP tool failures return the same payload as structured content with the MCP error flag set:
+The `teamspace.url` field uses the canonical Command Teamspace route. CLI and doctor failures are JSON error payloads on stderr. MCP tool failures return the same payload as structured content with the MCP error flag set:
 
 ```json
 {

@@ -11,6 +11,7 @@ import type {
   AsanaRequestOptions,
   AsanaRequestTrace,
 } from "../asana_gateway.js";
+import { commandTeamspaceUrl } from "../asana_url.js";
 import { CommandError } from "../errors.js";
 import { collectPages } from "../pagination/scanner.js";
 import type { DiscoveryResult } from "../schema_discovery.js";
@@ -100,10 +101,6 @@ async function listWorkspaces(
   return { workspaces };
 }
 
-function candidateUrl(workspaceGid: string, projectGid: string): string {
-  return `https://app.asana.com/1/${workspaceGid}/dev/space/${projectGid}/development`;
-}
-
 async function findTeamspaces(
   executor: AsanaRequestExecutorPort,
   input: FindTeamspacesInput,
@@ -128,7 +125,7 @@ async function findTeamspaces(
     candidates: page.items.map((candidate) => ({
       gid: candidate.gid,
       name: candidate.name,
-      url: candidateUrl(input.workspaceGid, candidate.gid),
+      url: commandTeamspaceUrl(input.workspaceGid, candidate.gid),
     })),
     schema_validated: false,
     truncated: page.items.length === input.limit,

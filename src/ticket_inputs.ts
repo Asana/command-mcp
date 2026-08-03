@@ -85,8 +85,6 @@ export const SearchTicketFiltersSchema = z
       .optional(),
     assignee: WorkspaceSearchAssigneeSchema.optional(),
     completed: z.boolean().describe("Exact completion state").optional(),
-    "due_on.before": DateOnlySchema.optional(),
-    "due_on.after": DateOnlySchema.optional(),
     "completed_on.before": DateOnlySchema.optional(),
     "completed_on.after": DateOnlySchema.optional(),
     compact: z
@@ -148,9 +146,6 @@ export const UpdateTicketFieldsSchema = z
     assignee: AssigneeIdentifierSchema.nullable()
       .describe("An Asana user GID or email address, or null to clear the assignee")
       .optional(),
-    due_on: DateOnlySchema.nullable()
-      .describe("The due date in YYYY-MM-DD form, or null to clear the due date")
-      .optional(),
     predicted_start_on: DateOnlySchema.nullable()
       .describe("The predicted start date in YYYY-MM-DD form, or null to clear it")
       .optional(),
@@ -169,7 +164,6 @@ export const CreateTicketFieldsSchema = z
     assignee: AssigneeIdentifierSchema.describe(
       "Initial assignee user GID or email address",
     ).optional(),
-    due_on: DateOnlySchema.describe("Initial due date in YYYY-MM-DD form").optional(),
     predicted_start_on: DateOnlySchema.describe(
       "Initial predicted start date in YYYY-MM-DD form",
     ).optional(),

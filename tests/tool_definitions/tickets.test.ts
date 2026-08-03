@@ -47,12 +47,11 @@ function ticketView() {
     type: null,
     labels: [],
     assignee: null,
-    due_on: null,
     predicted_start_on: null,
     predicted_completion_on: null,
     dependencies: [],
     releases: [],
-    url: null,
+    url: `https://app.asana.com/1/1500000000000001/dev/space/${TEAMSPACE_ID}/ticket/${TICKET_GID}`,
   };
 }
 
@@ -101,13 +100,13 @@ describe("ticket tool definitions", () => {
         name: "list_tickets",
         title: "List tickets",
         description:
-          "Enumerate tickets in the selected Teamspace with bounded type, label, assignee, Release, and completion-status filtering plus opaque pagination. Use search_tickets instead for completion-date or due-date ranges.",
+          "Enumerate tickets in the selected Teamspace with bounded type, label, assignee, Release, and completion-status filtering plus opaque pagination. Use search_tickets instead for completion-date ranges.",
       },
       {
         name: "search_tickets",
         title: "Search tickets",
         description:
-          "Search tickets in the selected Teamspace using eventually consistent Asana workspace search, with a total result limit up to 1,000. Use this tool for completion-date or due-date ranges; results include created_at and completed_at. Set compact=true to return only gid, name, and those timestamps.",
+          "Search tickets in the selected Teamspace using eventually consistent Asana workspace search, with a total result limit up to 1,000. Use this tool for completion-date ranges; results include created_at and completed_at. Set compact=true to return only gid, name, and those timestamps.",
       },
       {
         name: "get_ticket_prs",
@@ -208,7 +207,8 @@ describe("ticket tool definitions", () => {
     for (const absent of ["cursor", "type", "label", "release", "offset"]) {
       expect(searchInput.shape).not.toHaveProperty(absent);
     }
-    expect(searchInput.shape).toHaveProperty("due_on.before");
+    expect(searchInput.shape).not.toHaveProperty("due_on.before");
+    expect(searchInput.shape).not.toHaveProperty("due_on.after");
     expect(searchInput.shape).toHaveProperty("completed_on.after");
     expect(
       searchInput.safeParse({

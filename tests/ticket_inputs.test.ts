@@ -67,7 +67,6 @@ describe("ticket mutation inputs", () => {
         type: " feature ",
         labels: { add: [" customer "] },
         assignee: null,
-        due_on: null,
         predicted_start_on: null,
         predicted_completion_on: null,
       }),
@@ -78,11 +77,11 @@ describe("ticket mutation inputs", () => {
       type: "feature",
       labels: { add: ["customer"] },
       assignee: null,
-      due_on: null,
       predicted_start_on: null,
       predicted_completion_on: null,
     });
     expect(UpdateTicketFieldsSchema.safeParse({ unknown: true }).success).toBe(false);
+    expect(UpdateTicketFieldsSchema.safeParse({ due_on: "2026-08-10" }).success).toBe(false);
   });
 
   it("requires create names and never accepts completed", () => {
@@ -95,6 +94,9 @@ describe("ticket mutation inputs", () => {
     expect(CreateTicketFieldsSchema.safeParse({ name: "Ticket", completed: true }).success).toBe(
       false,
     );
+    expect(
+      CreateTicketFieldsSchema.safeParse({ name: "Ticket", due_on: "2026-08-10" }).success,
+    ).toBe(false);
   });
 
   it("requires a canonical, resumable, non-empty pending update", () => {

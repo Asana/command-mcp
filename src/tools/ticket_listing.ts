@@ -98,8 +98,6 @@ type WorkspaceSearchOptions = {
   resource_subtype?: string;
   "assignee.any"?: string;
   "projects.any"?: string;
-  "due_on.before"?: string;
-  "due_on.after"?: string;
   "completed_on.before"?: string;
   "completed_on.after"?: string;
   "created_at.after"?: string;
@@ -380,10 +378,6 @@ export function createTicketListingService(
         ...(input.text === undefined ? {} : { text: input.text }),
         ...(input.assignee === undefined ? {} : { "assignee.any": input.assignee }),
         ...(input.completed === undefined ? {} : { completed: input.completed }),
-        ...(input["due_on.before"] === undefined
-          ? {}
-          : { "due_on.before": input["due_on.before"] }),
-        ...(input["due_on.after"] === undefined ? {} : { "due_on.after": input["due_on.after"] }),
         ...(input["completed_on.before"] === undefined
           ? {}
           : { "completed_on.before": input["completed_on.before"] }),
