@@ -13,9 +13,15 @@ A PAT has the same Asana permissions as the user who created it. Open the [Asana
 
 ## Install and configure
 
-The package is distributed as an executable npm tarball attached to each GitHub Release. It is not published to the npm registry. Run the version-pinned release directly with `npx`; no repository clone or local build is needed.
+The package is distributed as an executable npm tarball attached to each GitHub Release. It is not published to the npm registry. No repository clone or local build is needed.
 
-Register the server with an MCP client using the raw release URL. Replace the token in this generic MCP client configuration:
+1. Open the [latest GitHub Release](https://github.com/AsanaPlayground/command-mcp/releases/latest).
+2. Download the `asana-command-mcp-<version>.tgz` asset to a stable location on your machine.
+3. Register the server using the downloaded file's full absolute path. Do not use `~` or a path relative to the MCP client's working directory.
+
+GitHub release downloads may require browser authentication, which `npx` does not inherit. Downloading the archive first also keeps the configured server pinned to that exact version.
+
+Replace the archive path and token in this generic MCP client configuration:
 
 ```json
 {
@@ -25,7 +31,7 @@ Register the server with an MCP client using the raw release URL. Replace the to
       "args": [
         "--yes",
         "--package",
-        "https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz",
+        "/absolute/path/to/asana-command-mcp-0.1.0.tgz",
         "asana-command-mcp"
       ],
       "env": {
@@ -36,11 +42,11 @@ Register the server with an MCP client using the raw release URL. Replace the to
 }
 ```
 
-The URL pins both the release tag and archive version so an upstream release cannot silently change the executable. `npx --yes --package` downloads and caches the archive without prompting, then runs its `asana-command-mcp` binary. Restart the client after changing its MCP configuration.
+`npx --yes --package` installs and caches the downloaded archive without prompting, then runs its `asana-command-mcp` binary. Restart the client after changing its MCP configuration.
 
 ### Claude Code
 
-Register the version-pinned release at user scope:
+Register the downloaded release at user scope:
 
 ```sh
 claude mcp add \
@@ -48,7 +54,7 @@ claude mcp add \
   --transport stdio \
   --scope user \
   asana-command \
-  -- npx --yes --package https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz asana-command-mcp
+  -- npx --yes --package /absolute/path/to/asana-command-mcp-0.1.0.tgz asana-command-mcp
 ```
 Confirm the registration with:
 
@@ -71,7 +77,7 @@ Add this entry to `$CODEX_HOME/config.toml` (by default `~/.codex/config.toml`):
 ```toml
 [mcp_servers.asana-command]
 command = "npx"
-args = ["--yes", "--package", "https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz", "asana-command-mcp"]
+args = ["--yes", "--package", "/absolute/path/to/asana-command-mcp-0.1.0.tgz", "asana-command-mcp"]
 env_vars = ["ASANA_ACCESS_TOKEN"]
 ```
 
@@ -135,7 +141,7 @@ Every scoped call performs a fresh Teamspace schema discovery. Ticket identifier
 Run `doctor` first when credentials, access, or Teamspace schema discovery is not working. The command writes one JSON object to stdout on success:
 
 ```sh
-npx --yes --package https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz asana-command-mcp doctor
+npx --yes --package /absolute/path/to/asana-command-mcp-0.1.0.tgz asana-command-mcp doctor
 ```
 
 Credentials-only output has this shape:
@@ -158,7 +164,7 @@ Credentials-only output has this shape:
 Pass a Teamspace project GID or its `https://app.asana.com/.../dev/space/...` URL to check authentication, schema discovery, and the required Asana custom-types opt-in:
 
 ```sh
-npx --yes --package https://github.com/AsanaPlayground/command-mcp/releases/download/v0.1.0/asana-command-mcp-0.1.0.tgz asana-command-mcp doctor "<teamspace-id-or-url>"
+npx --yes --package /absolute/path/to/asana-command-mcp-0.1.0.tgz asana-command-mcp doctor "<teamspace-id-or-url>"
 ```
 
 The Teamspace form has this shape:
