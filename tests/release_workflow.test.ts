@@ -16,9 +16,7 @@ describe("release workflow", () => {
   });
 
   it("executes and uploads the packed tarball", () => {
-    expect(workflow).toContain(
-      'npx --yes --package "$ARCHIVE" asana-command-mcp doctor',
-    );
+    expect(workflow).toContain('npx --yes --package "$ARCHIVE" asana-command-mcp doctor');
     expect(workflow).toContain("softprops/action-gh-release@");
     expect(workflow).toContain("files: $" + "{{ steps.pack.outputs.archive }}");
   });
