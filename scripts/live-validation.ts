@@ -540,7 +540,6 @@ async function validate(): Promise<void> {
             name: `${runId} primary`,
             description: `${runId} release validation`,
             assignee: assigneeGid,
-            due_on: dateFromNow(14),
             predicted_start_on: dateFromNow(2),
             predicted_completion_on: dateFromNow(10),
             ...(ticketType === undefined ? {} : { type: ticketType }),
@@ -591,7 +590,6 @@ async function validate(): Promise<void> {
         }
         const lifecycleFields = [
           "description",
-          "due_on",
           "predicted_start_on",
           "predicted_completion_on",
           "type",
