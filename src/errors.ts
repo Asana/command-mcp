@@ -44,7 +44,7 @@ type ErrorMeta = {
 const ERROR_META: Record<ErrorCode, ErrorMeta> = {
   authentication_failed: {
     retryable: false,
-    suggested_action: "replace or restore access for the configured Asana Personal Access Token",
+    suggested_action: "replace or restore access for the configured Asana credentials",
   },
   payment_required: { retryable: false },
   permission_denied: {

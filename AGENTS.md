@@ -14,7 +14,7 @@ MCP tool definition -> domain operation -> shared request policy -> official Asa
 - Tool implementation modules under `src/tools/` own the domain orchestration and view projections used by those definitions. They must not duplicate MCP metadata or bypass shared request policy.
 - `src/server.ts` composes tool definitions and supplies request-scoped state. It must not repeat tool contracts or domain behavior.
 - Tool implementation and shared domain modules own Command-specific decisions: Teamspace scope, Ticket identity, workflow fields, Release membership, comments, dependencies, and pull-request extraction.
-- Keep one small request-policy executor around the official Asana SDK. It owns PAT/header setup, absolute deadlines, bounded read retries, request IDs, redaction, error normalization, and narrow runtime decoding. Its operations should be endpoint-agnostic (`read`, `write`, and `readPage`).
+- Keep one small request-policy executor around the official Asana SDK. It owns credential/header setup, OAuth refresh, absolute deadlines, bounded read retries, request IDs, redaction, error normalization, and narrow runtime decoding. Its operations should be endpoint-agnostic (`read`, `write`, and `readPage`).
 - Domain modules call official SDK resource methods directly through that executor. Do not mirror SDK endpoints with methods such as `getTask`, `listStories`, or `addTaskToProject`, and do not maintain a general-purpose REST client, endpoint router, or broad mirror of Asana's object model.
 - If an SDK limitation requires custom request mechanics, isolate only that mechanic in the executor and document the reason. Do not let SDK types or HTTP details spread into tool definitions.
 - Stdio is the default transport. Add HTTP only when it is a product or deployment requirement. HTTP should be a thin MCP transport adapter; authentication, TLS, health checks, and generic request logging belong to the deployment platform where available.
@@ -52,9 +52,9 @@ MCP tool definition -> domain operation -> shared request policy -> official Asa
 ## Configuration and Credentials
 
 - Add configuration only for operator-facing product choices. Fixed safety limits and test overrides stay near the component that uses them.
-- Local development may load an untracked `.env`. Never commit credentials or print Personal Access Tokens, bearer tokens, authorization headers, or unredacted upstream errors.
+- Local development may load an untracked `.env`. Never commit credentials or print OAuth client secrets, refresh tokens, bearer tokens, authorization headers, or unredacted upstream errors.
 - A non-loopback HTTP listener requires an explicitly configured strong bearer token and the expected deployment security controls. The process must not announce readiness until the socket has bound.
-- Destructive integration tests require all of: `ASANA_ACCESS_TOKEN`, `ASANA_INTEGRATION_TEST_TEAMSPACE`, and `ASANA_INTEGRATION_TEST_DISPOSABLE=true`. Keep the explicit flag even when the Teamspace is known to be disposable.
+- Destructive integration tests require OAuth credentials from `auth login`, `ASANA_INTEGRATION_TEST_TEAMSPACE`, and `ASANA_INTEGRATION_TEST_DISPOSABLE=true`. Keep the explicit flag even when the Teamspace is known to be disposable.
 
 ## Testing Strategy
 

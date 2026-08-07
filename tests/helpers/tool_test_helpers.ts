@@ -11,7 +11,11 @@ import type { TicketService } from "../../src/tools/tickets.js";
 import type { WorkflowService } from "../../src/tools/workflow.js";
 
 export const CONFIG: Config = {
-  accessToken: "test-token",
+  authentication: {
+    clientId: "test-client-id",
+    clientSecret: "test-client-secret",
+    refreshToken: "test-refresh-token",
+  },
   readOnly: false,
   maxScanTasks: 1000,
   createTimeoutMs: 30_000,

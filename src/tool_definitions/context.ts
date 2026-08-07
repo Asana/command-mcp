@@ -38,7 +38,7 @@ const listWorkspaces = defineUnscopedTool({
   name: "list_workspaces",
   title: "List Asana workspaces",
   description:
-    "List workspaces accessible to the configured Asana Personal Access Token for Teamspace discovery or access diagnosis.",
+    "List workspaces accessible to the configured Asana identity for Teamspace discovery or access diagnosis.",
   input: EMPTY_INPUT_SCHEMA,
   output: WorkspaceListSchema,
   readOnly: true,
