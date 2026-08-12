@@ -24,7 +24,6 @@ const AuthorizationTokenResponseSchema = z.object({
 export type AsanaOAuthLoginConfig = {
   readonly clientId: string;
   readonly clientSecret: string;
-  readonly scopes: readonly string[];
 };
 
 type OutputWriter = {
@@ -51,10 +50,15 @@ function requiredTrimmedEnv(env: NodeJS.ProcessEnv, name: string): string {
 
 export function loadAsanaOAuthLoginConfig(env: NodeJS.ProcessEnv): AsanaOAuthLoginConfig {
   const rawScopes = env.ASANA_OAUTH_SCOPES?.trim();
+  if (rawScopes !== undefined && rawScopes !== "") {
+    throw new CommandError(
+      "invalid_configuration",
+      "Granular OAuth scopes are not supported; configure the Asana OAuth application with Full permissions",
+    );
+  }
   return {
     clientId: requiredTrimmedEnv(env, "ASANA_OAUTH_CLIENT_ID"),
     clientSecret: requiredTrimmedEnv(env, "ASANA_OAUTH_CLIENT_SECRET"),
-    scopes: rawScopes === undefined || rawScopes === "" ? [] : rawScopes.split(/\s+/),
   };
 }
 
@@ -70,9 +74,6 @@ function createAuthorizationUrl(
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("code_challenge", codeChallenge);
-  if (app.scopes.length > 0) {
-    url.searchParams.set("scope", app.scopes.join(" "));
-  }
   return url.toString();
 }
 

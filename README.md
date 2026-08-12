@@ -21,7 +21,7 @@ The server runs on your machine over stdio. It authenticates with Asana through 
    urn:ietf:wg:oauth:2.0:oob
    ```
 
-4. Use Full permissions, or configure the granular permissions your organization requires.
+4. Select **Full permissions**. The custom-types API required for Command schema discovery does not currently support granular OAuth scopes.
 5. Copy the client ID and client secret.
 
 Keep the client secret private. Do not commit it to this repository or add it to an MCP configuration file.
@@ -53,12 +53,6 @@ export ASANA_OAUTH_CLIENT_ID="your-client-id"
 export ASANA_OAUTH_CLIENT_SECRET="your-client-secret"
 ```
 
-If the application uses granular permissions, also set its scopes as a space-separated value:
-
-```sh
-export ASANA_OAUTH_SCOPES="tasks:read tasks:write projects:read projects:write"
-```
-
 Start the login flow:
 
 ```sh
@@ -70,7 +64,7 @@ The command opens Asana in your browser. Authorize the application, copy the cod
 After login, the client ID, client secret, and refresh token are stored in the operating system keychain. The access token is kept only in memory and refreshed automatically. You can remove the login variables from your shell:
 
 ```sh
-unset ASANA_OAUTH_CLIENT_ID ASANA_OAUTH_CLIENT_SECRET ASANA_OAUTH_SCOPES
+unset ASANA_OAUTH_CLIENT_ID ASANA_OAUTH_CLIENT_SECRET
 ```
 
 ## 4. Add the server to Claude Code
@@ -127,7 +121,7 @@ To also validate a Command Teamspace, pass its project GID or URL:
 npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp doctor "TEAMSPACE_ID_OR_URL"
 ```
 
-If authentication stops working, run `auth login` again.
+If authentication stops working, run `auth login` again, then restart Claude Code or Codex so it starts the MCP server with the new credentials.
 
 ## Configuration
 
@@ -135,7 +129,6 @@ If authentication stops working, run `auth login` again.
 | --- | --- | --- |
 | `ASANA_OAUTH_CLIENT_ID` | None | OAuth client ID used only by `auth login`. |
 | `ASANA_OAUTH_CLIENT_SECRET` | None | OAuth client secret used only by `auth login`. |
-| `ASANA_OAUTH_SCOPES` | Full permissions | Space-separated scopes used only by `auth login`. |
 | `ASANA_READ_ONLY` | `false` | Set to `true` to remove all write tools. |
 | `ASANA_MAX_SCAN_TASKS` | `1000` | Maximum number of tasks scanned by bounded operations. Maximum: `10000`. |
 | `ASANA_CREATE_TIMEOUT_SECONDS` | `30` | Time allowed for ticket custom-type initialization. |

@@ -74,17 +74,20 @@ jobs:
           workdir="$(mktemp -d)"
           trap 'rm -rf "$workdir"' EXIT
           set +e
-          output="$(cd "$workdir" && ASANA_ACCESS_TOKEN= npm_config_loglevel=error npx --yes --package "$ARCHIVE" asana-command-mcp doctor 2>&1)"
+          output="$(cd "$workdir" && npm_config_loglevel=error npx --yes --package "$ARCHIVE" asana-command-mcp doctor 2>&1)"
           status=$?
           set -e
           if [[ $status -ne 1 ]]; then
-            echo "Expected doctor to reject the intentionally empty token, received exit $status" >&2
+            echo "Expected doctor to reject the missing OAuth login, received exit $status" >&2
             echo "$output" >&2
             exit 1
           fi
           DOCTOR_OUTPUT="$output" node --input-type=module <<'NODE'
           const payload = JSON.parse(process.env.DOCTOR_OUTPUT);
-          if (payload.error?.code !== "invalid_configuration") {
+          if (
+            payload.error?.code !== "invalid_configuration" ||
+            payload.error?.message !== "Asana OAuth login is missing; run asana-command-mcp auth login"
+          ) {
             throw new Error(`Unexpected doctor output: ${process.env.DOCTOR_OUTPUT}`);
           }
           NODE

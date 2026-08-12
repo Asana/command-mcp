@@ -26,17 +26,15 @@ function createStore(saved: StoredOAuthCredentials[]): OAuthCredentialStore {
 }
 
 describe("Asana OAuth login", () => {
-  it("loads OAuth app credentials independently of legacy access-token variables", () => {
+  it("loads Full-permission OAuth app credentials independently of legacy variables", () => {
     expect(
       loadAsanaOAuthLoginConfig({
         ASANA_OAUTH_CLIENT_ID: " client-id ",
         ASANA_OAUTH_CLIENT_SECRET: " client-secret ",
-        ASANA_OAUTH_SCOPES: "tasks:read   tasks:write",
       }),
     ).toEqual({
       clientId: "client-id",
       clientSecret: "client-secret",
-      scopes: ["tasks:read", "tasks:write"],
     });
 
     expect(
@@ -48,8 +46,15 @@ describe("Asana OAuth login", () => {
     ).toEqual({
       clientId: "client-id",
       clientSecret: "client-secret",
-      scopes: [],
     });
+
+    expect(() =>
+      loadAsanaOAuthLoginConfig({
+        ASANA_OAUTH_CLIENT_ID: "client-id",
+        ASANA_OAUTH_CLIENT_SECRET: "client-secret",
+        ASANA_OAUTH_SCOPES: "tasks:read",
+      }),
+    ).toThrowError(/Full permissions/);
   });
 
   it("opens Asana authorization, verifies state and PKCE, and stores long-lived credentials", async () => {
@@ -74,7 +79,6 @@ describe("Asana OAuth login", () => {
       app: {
         clientId: "client-id",
         clientSecret: "client-secret",
-        scopes: ["tasks:read", "tasks:write"],
       },
       credentialStore: createStore(saved),
       fetch,
@@ -96,7 +100,7 @@ describe("Asana OAuth login", () => {
     expect(url.searchParams.get("redirect_uri")).toBe(ASANA_OAUTH_REDIRECT_URI);
     expect(url.searchParams.get("response_type")).toBe("code");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-    expect(url.searchParams.get("scope")).toBe("tasks:read tasks:write");
+    expect(url.searchParams.get("scope")).toBeNull();
 
     expect(fetch).toHaveBeenCalledOnce();
     const [tokenUrl, init] = fetch.mock.calls[0] ?? [];
@@ -142,7 +146,7 @@ describe("Asana OAuth login", () => {
     );
 
     await runAsanaOAuthLogin({
-      app: { clientId: "client-id", clientSecret: "client-secret", scopes: [] },
+      app: { clientId: "client-id", clientSecret: "client-secret" },
       credentialStore: createStore([]),
       fetch,
       openBrowser: async () => true,
@@ -163,7 +167,7 @@ describe("Asana OAuth login", () => {
 
     await expect(
       runAsanaOAuthLogin({
-        app: { clientId: "client-id", clientSecret: "client-secret", scopes: [] },
+        app: { clientId: "client-id", clientSecret: "client-secret" },
         credentialStore: createStore(saved),
         fetch,
         openBrowser: async () => true,
@@ -183,7 +187,7 @@ describe("Asana OAuth login", () => {
 
     await expect(
       runAsanaOAuthLogin({
-        app: { clientId: "client-id", clientSecret: secret, scopes: [] },
+        app: { clientId: "client-id", clientSecret: secret },
         credentialStore: createStore([]),
         fetch: async () =>
           new Response(JSON.stringify({ error_description: `${secret} was rejected` }), {
