@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-12
+
 ### Added
 
 - OAuth-only local Asana authentication through `auth login`, with standalone OOB code support, redirect-URI state verification, PKCE, native keychain storage for long-lived credentials, bounded in-memory access-token refresh, and refresh-token rotation.
