@@ -1,16 +1,21 @@
-import { ApiClient, UsersApi } from "asana";
+import { UsersApi } from "asana";
 import { z } from "zod";
 import type { AsanaRequestExecutorPort } from "../../src/asana_gateway.js";
-import { INCLUDE_ASANA_CREATED_CUSTOM_TYPES } from "../../src/asana_gateway.js";
 import type { Config } from "../../src/config.js";
 import { CommandError } from "../../src/errors.js";
-import type { CommandServices } from "../../src/services.js";
+import {
+  createDefaultOAuthCredentialStore,
+  type OAuthCredentialStore,
+  type StoredOAuthCredentials,
+} from "../../src/oauth_credentials.js";
+import { buildServices, type CommandServices } from "../../src/services.js";
 
 const CLEANUP_ATTEMPTS = 3;
 const CLEANUP_RETRY_DELAY_MS = 1_000;
 
 export type IntegrationEnvironment = {
-  accessToken: string;
+  oauthCredentials: StoredOAuthCredentials;
+  credentialStore: OAuthCredentialStore;
   teamspaceId: string;
   secondTeamspaceId?: string;
   disposable: boolean;
@@ -27,14 +32,29 @@ const CurrentUserSchema = z.object({
 
 const EmptyResponseSchema = z.object({}).strict();
 
-export function readIntegrationEnvironment(env: NodeJS.ProcessEnv): EnvironmentGate {
-  const accessToken = env.ASANA_ACCESS_TOKEN?.trim();
+export async function readIntegrationEnvironment(env: NodeJS.ProcessEnv): Promise<EnvironmentGate> {
   const teamspaceId = env.ASANA_INTEGRATION_TEST_TEAMSPACE?.trim();
-  if (!accessToken || !teamspaceId) {
+  if (!teamspaceId) {
     return {
       ready: false,
-      reason:
-        "live Asana tests skipped: set ASANA_ACCESS_TOKEN and ASANA_INTEGRATION_TEST_TEAMSPACE",
+      reason: "live Asana tests skipped: set ASANA_INTEGRATION_TEST_TEAMSPACE",
+    };
+  }
+
+  const credentialStore = createDefaultOAuthCredentialStore();
+  let oauthCredentials: StoredOAuthCredentials | null;
+  try {
+    oauthCredentials = await credentialStore.load();
+  } catch {
+    return {
+      ready: false,
+      reason: "live Asana tests skipped: the operating system keychain is unavailable",
+    };
+  }
+  if (oauthCredentials === null) {
+    return {
+      ready: false,
+      reason: "live Asana tests skipped: run asana-command-mcp auth login first",
     };
   }
 
@@ -42,7 +62,8 @@ export function readIntegrationEnvironment(env: NodeJS.ProcessEnv): EnvironmentG
   return {
     ready: true,
     environment: {
-      accessToken,
+      oauthCredentials,
+      credentialStore,
       teamspaceId,
       ...(secondTeamspaceId ? { secondTeamspaceId } : {}),
       disposable: env.ASANA_INTEGRATION_TEST_DISPOSABLE === "true",
@@ -52,13 +73,33 @@ export function readIntegrationEnvironment(env: NodeJS.ProcessEnv): EnvironmentG
 
 export function integrationConfig(environment: IntegrationEnvironment): Config {
   return {
-    accessToken: environment.accessToken,
+    authentication: {
+      clientId: environment.oauthCredentials.clientId,
+      clientSecret: environment.oauthCredentials.clientSecret,
+      refreshToken: environment.oauthCredentials.refreshToken,
+    },
     readOnly: false,
     maxScanTasks: 1_000,
     createTimeoutMs: 30_000,
     requestTimeoutMs: 20_000,
     toolTimeoutMs: 120_000,
   };
+}
+
+export function createIntegrationServices(environment: IntegrationEnvironment): CommandServices {
+  const config = integrationConfig(environment);
+  return buildServices(config, {
+    persistOAuthRefreshToken: async (refreshToken) => {
+      const oauthCredentials: StoredOAuthCredentials = {
+        version: 1,
+        clientId: config.authentication.clientId,
+        clientSecret: config.authentication.clientSecret,
+        refreshToken,
+      };
+      await environment.credentialStore.save(oauthCredentials);
+      environment.oauthCredentials = oauthCredentials;
+    },
+  });
 }
 
 export function deadline(milliseconds = 120_000): number {
@@ -72,23 +113,15 @@ export function delay(milliseconds: number): Promise<void> {
 }
 
 export async function currentUser(
-  environment: IntegrationEnvironment,
+  executor: AsanaRequestExecutorPort,
   workspaceGid: string,
 ): Promise<z.infer<typeof CurrentUserSchema>> {
-  const client = new ApiClient();
-  const tokenAuth = client.authentications.token;
-  if (tokenAuth === undefined) {
-    throw new Error("The Asana SDK client is missing token authentication");
-  }
-  tokenAuth.accessToken = environment.accessToken;
-  client.defaultHeaders["Asana-Enable"] = INCLUDE_ASANA_CREATED_CUSTOM_TYPES;
-  client.timeout = 20_000;
-  const users = new UsersApi(client);
-  const response = await users.getUserWithHttpInfo("me", {
-    workspace: workspaceGid,
-    opt_fields: "gid,name",
-  });
-  return CurrentUserSchema.parse(response.data.data);
+  return executor.read(CurrentUserSchema, { deadlineMs: deadline() }, async (resources) =>
+    new UsersApi(resources.tasks.apiClient).getUserWithHttpInfo("me", {
+      workspace: workspaceGid,
+      opt_fields: "gid,name",
+    }),
+  );
 }
 
 export class CreatedTaskCleanup {

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { runDoctor } from "../../src/doctor.js";
 import type { DiscoveryResult } from "../../src/schema_discovery.js";
-import { buildServices, type CommandServices } from "../../src/services.js";
+import type { CommandServices } from "../../src/services.js";
 import type { CreateTicketFields, UpdateTicketFields } from "../../src/ticket_inputs.js";
 import { createTicketService, type TicketService } from "../../src/tools/tickets.js";
 import {
   CreatedTaskCleanup,
+  createIntegrationServices,
   currentUser,
   deadline,
   delay,
@@ -18,7 +19,7 @@ const SEARCH_TIMEOUT_MS = 60_000;
 const INITIALIZATION_TIMEOUT_MS = 60_000;
 const LIFECYCLE_WORK_TIMEOUT_MS = 300_000;
 const LIFECYCLE_TEST_TIMEOUT_MS = 600_000;
-const gate = readIntegrationEnvironment(process.env);
+const gate = await readIntegrationEnvironment(process.env);
 const environment = gate.ready ? gate.environment : undefined;
 const writesEnabled = environment?.disposable === true;
 
@@ -159,7 +160,9 @@ describe.skipIf(environment === undefined)("live Asana authentication and schema
         return;
       }
       const config = integrationConfig(environment);
+      const services = createIntegrationServices(environment);
       const report = await runDoctor([environment.teamspaceId], config, {
+        services,
         deadlineMs: deadline(),
       });
 
@@ -181,8 +184,7 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
         return;
       }
 
-      const config = integrationConfig(environment);
-      const services = buildServices(config);
+      const services = createIntegrationServices(environment);
       const cleanup = new CreatedTaskCleanup(services.executor, services);
       const runId = `mcp-live-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
       const workDeadlineMs = Date.now() + LIFECYCLE_WORK_TIMEOUT_MS;
@@ -192,7 +194,7 @@ describe.skipIf(!writesEnabled)("live Asana disposable Teamspace lifecycle", () 
           environment.teamspaceId,
           workDeadlineMs,
         );
-        const me = await currentUser(environment, snapshot.workspace.gid);
+        const me = await currentUser(services.executor, snapshot.workspace.gid);
         const createFields: CreateTicketFields = {
           name: `${runId} primary`,
           description: `${runId} integration lifecycle`,

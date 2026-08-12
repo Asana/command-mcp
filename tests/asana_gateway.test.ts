@@ -29,7 +29,11 @@ const GidResourceSchema = z.object({ gid: GidSchema });
 
 function testConfig(overrides: Partial<Config> = {}): Config {
   return {
-    accessToken: ACCESS_TOKEN,
+    authentication: {
+      clientId: "oauth-client-id",
+      clientSecret: "oauth-client-secret",
+      refreshToken: "oauth-refresh-token",
+    },
     readOnly: false,
     maxScanTasks: 1000,
     createTimeoutMs: 30_000,
@@ -62,12 +66,24 @@ function testExecutorOptions(
     sleep?: (ms: number) => Promise<void>;
     random?: () => number;
     maxRetryAttempts?: number;
+    fetch?: typeof globalThis.fetch;
     clientFactory?: (options: { accessToken: string; timeoutMs: number }) => ApiClient;
     resourceFactory?: (client: ApiClient) => AsanaResourceBundle;
   } = {},
 ): AsanaRequestExecutorOptions {
   const options: AsanaRequestExecutorOptions = {
     clock: overrides.clock ?? (() => NOW_MS),
+    fetch:
+      overrides.fetch ??
+      (async () =>
+        new Response(
+          JSON.stringify({
+            access_token: ACCESS_TOKEN,
+            expires_in: 3600,
+            token_type: "bearer",
+          }),
+          { status: 200 },
+        )),
     clientFactory: overrides.clientFactory ?? buildFakeApiClient,
     resourceFactory: overrides.resourceFactory ?? (() => createResourceBundle()),
   };
@@ -162,11 +178,239 @@ function superagentError(options: {
 }
 
 describe("AsanaRequestExecutor", () => {
-  it("throws tool_timeout without invoking the SDK when the deadline is already exhausted", async () => {
+  it("exchanges an OAuth refresh token and sends the resulting bearer token", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            access_token: "oauth-access-token",
+            expires_in: 3600,
+            token_type: "bearer",
+          }),
+          { status: 200 },
+        ),
+    );
+    const clientFactory = vi.fn(buildFakeApiClient);
+    const executor = new AsanaRequestExecutor(testConfig(), {
+      clock: () => NOW_MS,
+      fetch,
+      clientFactory,
+      resourceFactory: () => createResourceBundle(),
+    });
+
+    await executor.read(GidResourceSchema, { deadlineMs: deadlineAfter(5_000) }, async () => ({
+      response: { headers: {} },
+      data: { data: { gid: "1" } },
+    }));
+
+    expect(fetch).toHaveBeenCalledOnce();
+    const [url, init] = fetch.mock.calls[0] ?? [];
+    expect(url).toBe("https://app.asana.com/-/oauth_token");
+    expect(init).toMatchObject({ method: "POST" });
+    expect(init?.headers).toEqual({ "content-type": "application/x-www-form-urlencoded" });
+    expect(String(init?.body)).toBe(
+      "grant_type=refresh_token&refresh_token=oauth-refresh-token&client_id=oauth-client-id&client_secret=oauth-client-secret",
+    );
+    expect(clientFactory).toHaveBeenCalledWith({
+      accessToken: "oauth-access-token",
+      timeoutMs: 5_000,
+    });
+  });
+
+  it("reuses a valid OAuth access token and refreshes it before expiry", async () => {
+    let nowMs = NOW_MS;
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "oauth-access-token-1",
+            expires_in: 3600,
+            token_type: "bearer",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "oauth-access-token-2",
+            expires_in: 3600,
+            token_type: "bearer",
+          }),
+          { status: 200 },
+        ),
+      );
+    const clientFactory = vi.fn(buildFakeApiClient);
+    const executor = new AsanaRequestExecutor(testConfig(), {
+      clock: () => nowMs,
+      fetch,
+      clientFactory,
+      resourceFactory: () => createResourceBundle(),
+    });
+    const callback = async () => ({
+      response: { headers: {} },
+      data: { data: { gid: "1" } },
+    });
+
+    await executor.read(GidResourceSchema, { deadlineMs: nowMs + 5_000 }, callback);
+    nowMs += 1_000;
+    await executor.read(GidResourceSchema, { deadlineMs: nowMs + 5_000 }, callback);
+    nowMs += 3_540_000;
+    await executor.read(GidResourceSchema, { deadlineMs: nowMs + 5_000 }, callback);
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(clientFactory.mock.calls.map(([options]) => options.accessToken)).toEqual([
+      "oauth-access-token-1",
+      "oauth-access-token-1",
+      "oauth-access-token-2",
+    ]);
+  });
+
+  it("persists a rotated OAuth refresh token before using it", async () => {
+    const persistOAuthRefreshToken = vi.fn(async () => undefined);
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            access_token: "oauth-access-token",
+            expires_in: 3600,
+            token_type: "bearer",
+            refresh_token: "rotated-refresh-token",
+          }),
+          { status: 200 },
+        ),
+    );
+    const executor = new AsanaRequestExecutor(testConfig(), {
+      clock: () => NOW_MS,
+      fetch,
+      persistOAuthRefreshToken,
+      clientFactory: buildFakeApiClient,
+      resourceFactory: () => createResourceBundle(),
+    });
+
+    await executor.read(GidResourceSchema, { deadlineMs: deadlineAfter(5_000) }, async () => ({
+      response: { headers: {} },
+      data: { data: { gid: "1" } },
+    }));
+
+    expect(persistOAuthRefreshToken).toHaveBeenCalledWith("rotated-refresh-token");
+  });
+
+  it("maps a rejected OAuth refresh without exposing credentials", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: "invalid_grant",
+            error_description: "oauth-refresh-token was rejected",
+          }),
+          { status: 400, headers: { "x-asana-request-id": "oauth-request-id" } },
+        ),
+    );
+    const executor = new AsanaRequestExecutor(testConfig(), {
+      clock: () => NOW_MS,
+      fetch,
+    });
+
+    await expect(
+      executor.read(GidResourceSchema, { deadlineMs: deadlineAfter(5_000) }, async () => ({
+        response: { headers: {} },
+        data: { data: { gid: "1" } },
+      })),
+    ).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(CommandError);
+      const commandError = error as CommandError;
+      expect(commandError.code).toBe("authentication_failed");
+      expect(commandError.asanaRequestIds).toEqual(["oauth-request-id"]);
+      expect(commandError.message).not.toContain("oauth-refresh-token");
+      expect(commandError.message).not.toContain("oauth-client-secret");
+      return true;
+    });
+  });
+
+  it("fails closed when an OAuth token response is malformed", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify({ access_token: "oauth-access-token", token_type: "bearer" }), {
+          status: 200,
+        }),
+    );
+    const executor = new AsanaRequestExecutor(testConfig(), {
+      clock: () => NOW_MS,
+      fetch,
+    });
+
+    await expect(
+      executor.read(GidResourceSchema, { deadlineMs: deadlineAfter(5_000) }, async () => ({
+        response: { headers: {} },
+        data: { data: { gid: "1" } },
+      })),
+    ).rejects.toMatchObject({ code: "schema_drift" });
+  });
+
+  it("maps an OAuth refresh timeout before invoking the SDK", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+      const error = new Error("oauth-client-secret timed out");
+      error.name = "TimeoutError";
+      throw error;
+    });
     const callback = vi.fn(async (): Promise<AsanaHttpResult> => unusedMethod("callback"));
     const executor = new AsanaRequestExecutor(testConfig(), {
-      clock: () => 2_000,
+      clock: () => NOW_MS,
+      fetch,
     });
+
+    await expect(
+      executor.read(GidResourceSchema, { deadlineMs: deadlineAfter(5_000) }, callback),
+    ).rejects.toMatchObject({
+      code: "request_timeout",
+      message: "The Asana OAuth token refresh timed out",
+    });
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it("redacts a refreshed OAuth access token from SDK errors", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            access_token: "oauth-access-token",
+            expires_in: 3600,
+            token_type: "bearer",
+          }),
+          { status: 200 },
+        ),
+    );
+    const executor = new AsanaRequestExecutor(testConfig(), {
+      clock: () => NOW_MS,
+      fetch,
+      clientFactory: buildFakeApiClient,
+      resourceFactory: () => createResourceBundle(),
+    });
+
+    await expect(
+      executor.read(GidResourceSchema, { deadlineMs: deadlineAfter(5_000) }, async () => {
+        throw superagentError({
+          status: 500,
+          body: { errors: [{ message: "Token oauth-access-token was rejected" }] },
+        });
+      }),
+    ).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(CommandError);
+      const commandError = error as CommandError;
+      expect(commandError.message).not.toContain("oauth-access-token");
+      expect(commandError.message).toContain("[REDACTED]");
+      return true;
+    });
+  });
+
+  it("throws tool_timeout without invoking the SDK when the deadline is already exhausted", async () => {
+    const callback = vi.fn(async (): Promise<AsanaHttpResult> => unusedMethod("callback"));
+    const executor = new AsanaRequestExecutor(
+      testConfig(),
+      testExecutorOptions({ clock: () => 2_000 }),
+    );
 
     await expect(
       executor.read(GidResourceSchema, { deadlineMs: 1_000 }, callback),
@@ -201,13 +445,16 @@ describe("AsanaRequestExecutor", () => {
 
   it("sends the Asana custom-type opt-in header on every request", async () => {
     let capturedHeaders: Record<string, string> | undefined;
-    const executor = new AsanaRequestExecutor(testConfig(), {
-      clock: () => NOW_MS,
-      resourceFactory: (client) => {
-        capturedHeaders = client.defaultHeaders;
-        return createResourceBundle();
-      },
-    });
+    const executor = new AsanaRequestExecutor(
+      testConfig(),
+      testExecutorOptions({
+        clock: () => NOW_MS,
+        resourceFactory: (client) => {
+          capturedHeaders = client.defaultHeaders;
+          return createResourceBundle();
+        },
+      }),
+    );
 
     await executor.write(GidResourceSchema, { deadlineMs: deadlineAfter(5_000) }, async () => ({
       response: { headers: {} },

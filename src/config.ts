@@ -1,4 +1,6 @@
+import { z } from "zod";
 import { CommandError } from "./errors.js";
+import type { StoredOAuthCredentials } from "./oauth_credentials.js";
 
 export const DEFAULT_SCAN_BOUND = 1000;
 export const MAX_SCAN_BOUND = 10000;
@@ -6,17 +8,46 @@ export const DEFAULT_CREATE_TIMEOUT_MS = 30_000;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
 export const DEFAULT_TOOL_TIMEOUT_MS = 120_000;
 
-export type Config = {
-  accessToken: string;
-  readOnly: boolean;
-  maxScanTasks: number;
-  createTimeoutMs: number;
-  requestTimeoutMs: number;
-  toolTimeoutMs: number;
-};
+const AsanaAuthenticationSchema = z.object({
+  clientId: z.string().min(1),
+  clientSecret: z.string().min(1),
+  refreshToken: z.string().min(1),
+});
+
+const ConfigSchema = z.object({
+  authentication: AsanaAuthenticationSchema,
+  readOnly: z.boolean(),
+  maxScanTasks: z.number().int().positive().max(MAX_SCAN_BOUND),
+  createTimeoutMs: z.number().int().positive(),
+  requestTimeoutMs: z.number().int().positive(),
+  toolTimeoutMs: z.number().int().positive(),
+});
+
+export type AsanaAuthentication = z.infer<typeof AsanaAuthenticationSchema>;
+export type Config = z.infer<typeof ConfigSchema>;
 
 function invalidConfig(variableName: string): never {
   throw new CommandError("invalid_configuration", `Invalid value for ${variableName}`);
+}
+
+export type LoadConfigOptions = {
+  readonly oauthCredentials?: StoredOAuthCredentials | null;
+};
+
+function loadAuthentication(options: LoadConfigOptions): AsanaAuthentication {
+  const oauthCredentials = options.oauthCredentials;
+  if (oauthCredentials !== undefined && oauthCredentials !== null) {
+    return {
+      clientId: oauthCredentials.clientId,
+      clientSecret: oauthCredentials.clientSecret,
+      refreshToken: oauthCredentials.refreshToken,
+    };
+  }
+
+  throw new CommandError(
+    "invalid_configuration",
+    "Asana OAuth login is missing; run asana-command-mcp auth login",
+  );
 }
 
 function parseBoolean(value: string | undefined, variableName: string): boolean {
@@ -51,12 +82,11 @@ function parsePositiveInteger(
   return parsed;
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const rawToken = env.ASANA_ACCESS_TOKEN;
-  if (rawToken === undefined || rawToken.trim() === "") {
-    invalidConfig("ASANA_ACCESS_TOKEN");
-  }
-  const accessToken = rawToken.trim();
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  options: LoadConfigOptions = {},
+): Config {
+  const authentication = loadAuthentication(options);
 
   const readOnly = parseBoolean(env.ASANA_READ_ONLY, "ASANA_READ_ONLY");
 
@@ -84,12 +114,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     DEFAULT_TOOL_TIMEOUT_MS,
   );
 
-  return {
-    accessToken,
+  return ConfigSchema.parse({
+    authentication,
     readOnly,
     maxScanTasks,
     createTimeoutMs,
     requestTimeoutMs,
     toolTimeoutMs,
-  };
+  });
 }

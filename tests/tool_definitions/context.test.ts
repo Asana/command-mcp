@@ -91,7 +91,7 @@ describe("context tool definitions", () => {
         name: "list_workspaces",
         title: "List Asana workspaces",
         description:
-          "List workspaces accessible to the configured Asana Personal Access Token for Teamspace discovery or access diagnosis.",
+          "List workspaces accessible to the configured Asana identity for Teamspace discovery or access diagnosis.",
       },
       {
         name: "find_teamspaces",

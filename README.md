@@ -1,106 +1,141 @@
-# Asana Command MCP server
+# Asana Command MCP
 
-`@asana/command-mcp` is a local [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for managing Asana Command tickets through the public Asana API. It runs on your machine under your own Asana credentials.
+`@asana/command-mcp` is a local [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for working with Asana Command tickets from Claude Code or Codex.
 
-It is not a hosted service. It has no hosted component, does not accept inbound HTTP connections, and exposes no HTTP listener; its only MCP transport is stdio.
+The server runs on your machine over stdio. It authenticates with Asana through OAuth, stores credentials in your operating system keychain, and refreshes access tokens automatically.
 
 ## Requirements
 
 - Node.js 22 or newer
-- An Asana Personal Access Token (PAT)
+- An Asana account
+- An Asana OAuth application
+- Claude Code or Codex
 
-A PAT has the same Asana permissions as the user who created it. Open the [Asana developer console](https://app.asana.com/0/my-apps), select **Create new token**, name it, create it, and copy it immediately. Asana displays the token only once. Treat it like a password.
+## 1. Create an Asana OAuth application
 
-## Install and configure
+1. Open the [Asana developer console](https://app.asana.com/0/my-apps).
+2. Create an OAuth application.
+3. Add this redirect URL:
 
-The package is distributed as an executable npm tarball attached to each GitHub Release. It is not published to the npm registry. No repository clone or local build is needed.
+   ```text
+   urn:ietf:wg:oauth:2.0:oob
+   ```
 
-1. Open the [latest GitHub Release](https://github.com/AsanaPlayground/command-mcp/releases/latest).
-2. Download the `asana-command-mcp-<version>.tgz` asset to a stable location on your machine.
-3. Register the server using the downloaded file's full absolute path. Do not use `~` or a path relative to the MCP client's working directory.
+4. Select **Full permissions**. The custom-types API required for Command schema discovery does not currently support granular OAuth scopes.
+5. Copy the client ID and client secret.
 
-GitHub release downloads may require browser authentication, which `npx` does not inherit. Downloading the archive first also keeps the configured server pinned to that exact version.
+Keep the client secret private. Do not commit it to this repository or add it to an MCP configuration file.
 
-Replace the archive path and token in this generic MCP client configuration:
+See [Asana's OAuth documentation](https://developers.asana.com/docs/oauth) for application settings.
 
-```json
-{
-  "mcpServers": {
-    "asana-command": {
-      "command": "npx",
-      "args": [
-        "--yes",
-        "--package",
-        "/absolute/path/to/asana-command-mcp-0.1.0.tgz",
-        "asana-command-mcp"
-      ],
-      "env": {
-        "ASANA_ACCESS_TOKEN": "replace-with-your-personal-access-token"
-      }
-    }
-  }
-}
+## 2. Download the package
+
+Sign in to GitHub with an account that can access this private repository, then:
+
+1. Open the [latest GitHub release](https://github.com/AsanaPlayground/command-mcp/releases/latest).
+2. Download the `asana-command-mcp-<version>.tgz` file.
+3. Save it in a permanent location on your machine. Do not move or delete it after adding the MCP server.
+
+Set its absolute path in your terminal:
+
+```sh
+export ASANA_COMMAND_MCP_PACKAGE="/absolute/path/to/asana-command-mcp-0.1.0.tgz"
 ```
 
-`npx --yes --package` installs and caches the downloaded archive without prompting, then runs its `asana-command-mcp` binary. Restart the client after changing its MCP configuration.
+Use an absolute path. MCP clients do not reliably expand `~` in their configuration.
 
-### Claude Code
+## 3. Sign in to Asana
 
-Register the downloaded release at user scope:
+Set the OAuth application credentials in your terminal:
+
+```sh
+export ASANA_OAUTH_CLIENT_ID="your-client-id"
+export ASANA_OAUTH_CLIENT_SECRET="your-client-secret"
+```
+
+Start the login flow:
+
+```sh
+npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp auth login
+```
+
+The command opens Asana in your browser. Authorize the application, copy the code shown by Asana, and paste it into the terminal.
+
+After login, the client ID, client secret, and refresh token are stored in the operating system keychain. The access token is kept only in memory and refreshed automatically. You can remove the login variables from your shell:
+
+```sh
+unset ASANA_OAUTH_CLIENT_ID ASANA_OAUTH_CLIENT_SECRET
+```
+
+## 4. Add the server to Claude Code
 
 ```sh
 claude mcp add \
-  --env 'ASANA_ACCESS_TOKEN=replace-with-your-personal-access-token' \
   --transport stdio \
   --scope user \
   asana-command \
-  -- npx --yes --package /absolute/path/to/asana-command-mcp-0.1.0.tgz asana-command-mcp
+  -- npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp
 ```
-Confirm the registration with:
+
+Confirm that it was added:
 
 ```sh
 claude mcp get asana-command
 ```
 
-See the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for scope and removal options.
+Start Claude Code and ask it to list your Asana workspaces or inspect a Command Teamspace.
 
-### Codex
+Claude Code starts the local MCP server but does not perform the Asana login. Run `auth login` before adding or starting the server.
 
-Export the token in the environment that launches Codex:
+See the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for MCP scope and removal options.
 
-```sh
-export ASANA_ACCESS_TOKEN="replace-with-your-personal-access-token"
-```
+## Add the server to Codex
 
-Add this entry to `$CODEX_HOME/config.toml` (by default `~/.codex/config.toml`):
+After completing the Asana login, add this entry to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.asana-command]
 command = "npx"
 args = ["--yes", "--package", "/absolute/path/to/asana-command-mcp-0.1.0.tgz", "asana-command-mcp"]
-env_vars = ["ASANA_ACCESS_TOKEN"]
 ```
 
-`env_vars` forwards the token without storing its value in `config.toml`. Confirm the registration with:
+Confirm that it was added:
 
 ```sh
 codex mcp list
 ```
 
-The Codex CLI and IDE extension on the same host share this configuration. See the [Codex MCP documentation](https://developers.openai.com/codex/mcp) for project-scoped and other configuration options.
+See the [Codex MCP documentation](https://developers.openai.com/codex/mcp) for other configuration options.
+
+## Check the connection
+
+Check OAuth credentials and Asana access:
+
+```sh
+npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp doctor
+```
+
+To also validate a Command Teamspace, pass its project GID or URL:
+
+```sh
+npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp doctor "TEAMSPACE_ID_OR_URL"
+```
+
+If authentication stops working, run `auth login` again, then restart Claude Code or Codex so it starts the MCP server with the new credentials.
 
 ## Configuration
 
-| Environment variable | Required | Default | Meaning |
-| --- | --- | --- | --- |
-| `ASANA_ACCESS_TOKEN` | Yes | None | Personal Access Token used for all Asana API requests. Blank values are rejected. |
-| `ASANA_READ_ONLY` | No | `false` | Accepts `true` or `false`, case-insensitively. When `true`, every mutating tool is absent from MCP tool discovery, rather than advertised and made to fail when called. |
-| `ASANA_MAX_SCAN_TASKS` | No | `1000` | Positive integer bounding ticket listing, ticket search, and pull-request discovery scans. Values above the hard maximum of `10000` are clamped to `10000`. |
-| `ASANA_CREATE_TIMEOUT_SECONDS` | No | `30` | Positive integer number of seconds to wait for asynchronous custom-type initialization during ticket creation. |
-| `ASANA_REQUEST_TIMEOUT_MS` | No | `20000` | Positive integer per-request Asana API timeout in milliseconds, also bounded by the remaining overall tool budget. |
-| `ASANA_TOOL_TIMEOUT_MS` | No | `120000` | Positive integer overall deadline in milliseconds for one tool call or doctor run. |
+| Environment variable | Default | Description |
+| --- | --- | --- |
+| `ASANA_OAUTH_CLIENT_ID` | None | OAuth client ID used only by `auth login`. |
+| `ASANA_OAUTH_CLIENT_SECRET` | None | OAuth client secret used only by `auth login`. |
+| `ASANA_READ_ONLY` | `false` | Set to `true` to remove all write tools. |
+| `ASANA_MAX_SCAN_TASKS` | `1000` | Maximum number of tasks scanned by bounded operations. Maximum: `10000`. |
+| `ASANA_CREATE_TIMEOUT_SECONDS` | `30` | Time allowed for ticket custom-type initialization. |
+| `ASANA_REQUEST_TIMEOUT_MS` | `20000` | Timeout for one Asana API request. |
+| `ASANA_TOOL_TIMEOUT_MS` | `120000` | Overall timeout for one tool call. |
 
-The executable loads `.env` from the process working directory when that file exists. The MCP client chooses the process working directory, so supplying explicit `env` entries in the client configuration is the reliable option; alternatively, configure the client to use the directory that contains `.env`.
+A local untracked `.env` file can be used instead of shell exports. Do not commit credentials.
 
 ## Tools
 
@@ -109,7 +144,7 @@ The descriptions below are the exact strings advertised through MCP tool discove
 | Tool | Mode | Advertised description |
 | --- | --- | --- |
 | `get_context` | Read | Confirm one selected Teamspace at the start of an Asana workflow or when diagnosing schema warnings; do not call before every tool. |
-| `list_workspaces` | Read | List workspaces accessible to the configured Asana Personal Access Token for Teamspace discovery or access diagnosis. |
+| `list_workspaces` | Read | List workspaces accessible to the configured Asana identity for Teamspace discovery or access diagnosis. |
 | `find_teamspaces` | Read | Find recent or query-matched Teamspace candidates in one workspace; candidates are not schema-validated. |
 | `get_teamspace_schema` | Read | Return the freshly discovered Command schema used for this tool call. |
 | `read_ticket` | Read | Read one Command ticket by Asana GID, Command short ID, or Asana task URL. |
@@ -136,100 +171,18 @@ Important consistency guarantees:
 
 Every scoped call performs a fresh Teamspace schema discovery. Ticket identifiers may be an Asana task GID, a Command short ID, or an Asana task URL.
 
-## Diagnose configuration with `doctor`
+## Notes
 
-Run `doctor` first when credentials, access, or Teamspace schema discovery is not working. The command writes one JSON object to stdout on success:
+- OAuth credentials require an available and unlocked macOS Keychain, Windows Credential Manager, or Linux secret store. Plaintext credential storage is not supported.
+- Asana displays a one-time authorization code during login. Copy it into the terminal to finish authentication.
+- Teamspace schema discovery currently relies on English field and option names.
+- Asana search is eventually consistent, so recent changes may take time to appear in search results.
 
-```sh
-npx --yes --package /absolute/path/to/asana-command-mcp-0.1.0.tgz asana-command-mcp doctor
-```
-
-Credentials-only output has this shape:
-
-```json
-{
-  "status": "passed",
-  "authentication": {
-    "status": "passed",
-    "workspaces": [
-      {
-        "gid": "<workspace-gid>",
-        "name": "Example workspace"
-      }
-    ]
-  }
-}
-```
-
-Pass a Teamspace project GID or its `https://app.asana.com/.../dev/space/...` URL to check authentication, schema discovery, and the required Asana custom-types opt-in:
+## Development
 
 ```sh
-npx --yes --package /absolute/path/to/asana-command-mcp-0.1.0.tgz asana-command-mcp doctor "<teamspace-id-or-url>"
+npm ci
+npm run check
 ```
 
-The Teamspace form has this shape:
-
-```json
-{
-  "status": "passed",
-  "authentication": {
-    "status": "passed",
-    "workspaces": [
-      {
-        "gid": "<workspace-gid>",
-        "name": "Example workspace"
-      }
-    ]
-  },
-  "teamspace_schema": {
-    "status": "passed",
-    "workspace": {
-      "gid": "<workspace-gid>",
-      "name": "Example workspace"
-    },
-    "teamspace": {
-      "gid": "<teamspace-gid>",
-      "name": "Example Teamspace",
-      "url": "https://app.asana.com/.../dev/space/..."
-    },
-    "schema_fingerprint": "<schema-fingerprint>",
-    "warnings": []
-  },
-  "asana_custom_types_opt_in": {
-    "status": "passed"
-  }
-}
-```
-
-The `teamspace.url` field uses the canonical Command Teamspace route. CLI and doctor failures are JSON error payloads on stderr. MCP tool failures return the same payload as structured content with the MCP error flag set:
-
-```json
-{
-  "error": {
-    "code": "invalid_configuration",
-    "message": "Invalid value for ASANA_ACCESS_TOKEN",
-    "retryable": false
-  },
-  "asana_request_ids": []
-}
-```
-
-Stable error codes are `authentication_failed`, `payment_required`, `permission_denied`, `not_found`, `required_api_change_unavailable`, `invalid_teamspace`, `schema_ambiguous`, `schema_incompatible`, `schema_drift`, `cursor_invalid`, `out_of_scope`, `unknown_release`, `rate_limited`, `request_timeout`, `tool_timeout`, `invalid_configuration`, `invalid_input`, and `asana_api_error`.
-
-## Known limitations
-
-- Schema discovery relies on English-language field and option names. Non-English Teamspace schemas are unverified.
-- A Teamspace without a ticket type field returns `null` for type reads; type filters and type mutations are unavailable. Creating or updating other fields remains possible.
-- Completion is the only core ticket state represented by this server. It does not model a separate workflow-status state.
-- Asana initializes a new ticket's custom type asynchronously. If initialization or the required follow-up updates cannot complete within the applicable create, request, or overall tool deadline, `create_ticket` may return `status: "pending"` and `outcome: "initialization_pending"`. The task already exists: do **not** call `create_ticket` again. Call `update_ticket` with `data.teamspace_id` as `teamspace_id`, `data.task_gid` as `task_gid`, and the fields in `data.pending_updates.update_ticket`. If initialization is still pending, retry that same `update_ticket` request.
-- Listing and pull-request extraction are scan-bounded. Search is eventually consistent.
-
-## Verification status
-
-`npm run check` verifies type checking, linting, non-integration tests, and a production build. The unit and contract suite covers configuration defaults, tool discovery and descriptions, scope checks, bounded scans, workspace-search request mapping, post-write direct reads, pending initialization, error normalization, and credential redaction.
-
-The repository also contains a disposable-Teamspace integration suite and a built-server live MCP validator. This documentation revision has no recorded passing real-Asana run against its exact commit because the required credentials and disposable Teamspace were unavailable. Real-Asana behavior—including writes, eventual search visibility, pending-initialization resumption, and verified cleanup—therefore remains **unverified**, not passed. See [CONTRIBUTING.md](CONTRIBUTING.md) to produce that evidence safely.
-
-## Security and contributing
-
-See [SECURITY.md](SECURITY.md) for the trust model and vulnerability reporting process. See [CONTRIBUTING.md](CONTRIBUTING.md) for local development and verification requirements.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and release validation. See [SECURITY.md](SECURITY.md) for security reporting and the credential trust model.

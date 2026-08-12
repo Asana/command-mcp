@@ -4,7 +4,13 @@ import {
   getDefaultEnvironment,
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { ApiClient, TasksApi, UsersApi } from "asana";
+import { UsersApi } from "asana";
+import { z } from "zod";
+import type { AsanaRequestExecutorPort } from "../src/asana_gateway.js";
+import { loadConfig } from "../src/config.js";
+import { CommandError } from "../src/errors.js";
+import { createDefaultOAuthCredentialStore } from "../src/oauth_credentials.js";
+import { buildServices, type CommandServices } from "../src/services.js";
 
 type Status = "pass" | "fail" | "unknown";
 
@@ -41,9 +47,10 @@ const CALL_TIMEOUT_MS = 120_000;
 const SEARCH_TIMEOUT_MS = 60_000;
 const INITIALIZATION_TIMEOUT_MS = 60_000;
 const CLEANUP_ATTEMPTS = 3;
+const CurrentUserSchema = z.object({ gid: z.string().regex(/^\d+$/) });
+const EmptyResponseSchema = z.object({}).strict();
 const results = new Map<string, CapabilityResult>();
 const createdTaskGids = new Set<string>();
-let accessToken = "";
 let createOutcomeAmbiguous = false;
 let createAttempted = false;
 
@@ -85,11 +92,7 @@ function arrayField(value: JsonObject, field: string): unknown[] {
 }
 
 function sanitize(message: string): string {
-  let value = message;
-  if (accessToken.length > 0) {
-    value = value.split(accessToken).join("[REDACTED]");
-  }
-  return value.replace(/Bearer\s+\S+/giu, "Bearer [REDACTED]").slice(0, 500);
+  return message.replace(/Bearer\s+\S+/giu, "Bearer [REDACTED]").slice(0, 500);
 }
 
 function errorDetail(error: unknown): string {
@@ -130,50 +133,58 @@ function dateFromNow(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
 }
 
-function apiClient(token: string): ApiClient {
-  const client = new ApiClient();
-  const tokenAuth = client.authentications.token;
-  if (tokenAuth === undefined) {
-    throw new EvidenceError("unknown", "Asana SDK token authentication is unavailable");
+async function createOAuthServices(): Promise<CommandServices> {
+  const credentialStore = createDefaultOAuthCredentialStore();
+  const oauthCredentials = await credentialStore.load();
+  if (oauthCredentials === null) {
+    throw new EvidenceError("unknown", "run asana-command-mcp auth login first");
   }
-  tokenAuth.accessToken = token;
-  client.defaultHeaders["Asana-Enable"] = "include_asana_created_custom_types";
-  client.timeout = 20_000;
-  return client;
-}
-
-async function currentUserGid(token: string, workspaceGid: string): Promise<string> {
-  const response = await new UsersApi(apiClient(token)).getUserWithHttpInfo("me", {
-    workspace: workspaceGid,
-    opt_fields: "gid",
+  const config = loadConfig({ ...process.env, ASANA_READ_ONLY: "false" }, { oauthCredentials });
+  return buildServices(config, {
+    persistOAuthRefreshToken: async (refreshToken) =>
+      credentialStore.save({
+        version: 1,
+        clientId: config.authentication.clientId,
+        clientSecret: config.authentication.clientSecret,
+        refreshToken,
+      }),
   });
-  if (!isObject(response.data) || !isObject(response.data.data)) {
-    throw new EvidenceError("unknown", "current-user response was unparseable");
-  }
-  return stringField(response.data.data, "gid");
 }
 
-function statusCode(error: unknown): number | undefined {
-  if (!isObject(error)) {
-    return undefined;
-  }
-  return typeof error.status === "number" ? error.status : undefined;
+async function currentUserGid(
+  executor: AsanaRequestExecutorPort,
+  workspaceGid: string,
+): Promise<string> {
+  const user = await executor.read(
+    CurrentUserSchema,
+    { deadlineMs: Date.now() + CALL_TIMEOUT_MS },
+    async (resources) =>
+      new UsersApi(resources.tasks.apiClient).getUserWithHttpInfo("me", {
+        workspace: workspaceGid,
+        opt_fields: "gid",
+      }),
+  );
+  return user.gid;
 }
 
-async function deleteAndVerify(tasks: TasksApi, gid: string): Promise<void> {
+async function deleteAndVerify(services: CommandServices, gid: string): Promise<void> {
   try {
-    await tasks.deleteTaskWithHttpInfo(gid);
+    await services.executor.write(
+      EmptyResponseSchema,
+      { deadlineMs: Date.now() + CALL_TIMEOUT_MS },
+      async (resources) => resources.tasks.deleteTaskWithHttpInfo(gid),
+    );
   } catch (error) {
-    if (statusCode(error) !== 404) {
+    if (!(error instanceof CommandError && error.code === "not_found")) {
       throw error;
     }
   }
 
   for (let attempt = 1; attempt <= CLEANUP_ATTEMPTS; attempt += 1) {
     try {
-      await tasks.getTaskWithHttpInfo(gid, { opt_fields: "gid" });
+      await services.tickets.readByGid(gid, Date.now() + CALL_TIMEOUT_MS);
     } catch (error) {
-      if (statusCode(error) === 404) {
+      if (error instanceof CommandError && error.code === "not_found") {
         return;
       }
       throw error;
@@ -185,12 +196,25 @@ async function deleteAndVerify(tasks: TasksApi, gid: string): Promise<void> {
   throw new Error("authoritative direct reads still return the deleted task");
 }
 
-async function cleanupCreatedTasks(token: string): Promise<void> {
-  const tasks = new TasksApi(apiClient(token));
+async function cleanupCreatedTasks(): Promise<void> {
+  if (createdTaskGids.size === 0) {
+    if (createOutcomeAmbiguous) {
+      record(
+        "verified_cleanup",
+        "unknown",
+        "a create returned no parseable result, so its task GID and cleanup state are unknown",
+      );
+    } else if (!createAttempted) {
+      record("verified_cleanup", "unknown", "no task was created, so cleanup was not exercised");
+    }
+    return;
+  }
+
+  const services = await createOAuthServices();
   const failed: string[] = [];
   for (const gid of [...createdTaskGids].reverse()) {
     try {
-      await deleteAndVerify(tasks, gid);
+      await deleteAndVerify(services, gid);
       createdTaskGids.delete(gid);
     } catch (error) {
       failed.push(gid);
@@ -211,8 +235,6 @@ async function cleanupCreatedTasks(token: string): Promise<void> {
       "unknown",
       "a create returned no parseable result, so its task GID and cleanup state are unknown",
     );
-  } else if (!createAttempted) {
-    record("verified_cleanup", "unknown", "no task was created, so cleanup was not exercised");
   } else {
     record("verified_cleanup", "pass", "every created task returned not_found on direct read");
   }
@@ -369,12 +391,10 @@ async function createTicket(
 }
 
 async function validate(): Promise<void> {
-  accessToken = process.env.ASANA_ACCESS_TOKEN?.trim() ?? "";
   const teamspaceId = process.env.ASANA_INTEGRATION_TEST_TEAMSPACE?.trim() ?? "";
   const disposable = process.env.ASANA_INTEGRATION_TEST_DISPOSABLE === "true";
-  if (accessToken.length === 0 || teamspaceId.length === 0 || !disposable) {
+  if (teamspaceId.length === 0 || !disposable) {
     const missing = [
-      ...(accessToken.length === 0 ? ["ASANA_ACCESS_TOKEN"] : []),
       ...(teamspaceId.length === 0 ? ["ASANA_INTEGRATION_TEST_TEAMSPACE"] : []),
       ...(!disposable ? ["ASANA_INTEGRATION_TEST_DISPOSABLE=true"] : []),
     ];
@@ -390,11 +410,40 @@ async function validate(): Promise<void> {
     record("verified_cleanup", "unknown", "no write was attempted");
     return;
   }
-  record("configuration", "pass", "token, Teamspace, and explicit disposable flag are present");
+  let preflightServices: CommandServices;
+  let preflightSchema: Awaited<ReturnType<CommandServices["schemaDiscovery"]["discover"]>>;
+  let preflightAssigneeGid: string;
+  try {
+    preflightServices = await createOAuthServices();
+    preflightSchema = await preflightServices.schemaDiscovery.discover(
+      teamspaceId,
+      Date.now() + CALL_TIMEOUT_MS,
+    );
+    preflightAssigneeGid = await currentUserGid(
+      preflightServices.executor,
+      preflightSchema.workspace.gid,
+    );
+  } catch (error) {
+    record("configuration", "unknown", `OAuth preflight failed: ${errorDetail(error)}`);
+    for (const capability of [
+      "protocol_initialize",
+      "tool_discovery",
+      ...EXPECTED_TOOLS,
+      ...ADDITIONAL_CAPABILITIES,
+    ]) {
+      record(capability, "unknown", "validation did not run without OAuth preflight evidence");
+    }
+    record("verified_cleanup", "unknown", "no write was attempted");
+    return;
+  }
+  record(
+    "configuration",
+    "pass",
+    "OAuth keychain credentials, Teamspace, and explicit disposable flag are present",
+  );
 
   const childEnvironment = {
     ...getDefaultEnvironment(),
-    ASANA_ACCESS_TOKEN: accessToken,
     ASANA_READ_ONLY: "false",
     ASANA_INTEGRATION_TEST_TEAMSPACE: teamspaceId,
     ASANA_INTEGRATION_TEST_DISPOSABLE: "true",
@@ -525,9 +574,14 @@ async function validate(): Promise<void> {
 
     let assigneeGid: string | undefined;
     await probe("current_user_for_ticket_fields", async () => {
-      const gid = await currentUserGid(accessToken, workspaceGid);
-      assigneeGid = gid;
-      return { value: gid, detail: "resolved current user for assignee verification" };
+      if (workspaceGid !== preflightSchema.workspace.gid) {
+        throw new EvidenceError("fail", "preflight and MCP schema workspaces disagree");
+      }
+      assigneeGid = preflightAssigneeGid;
+      return {
+        value: preflightAssigneeGid,
+        detail: "resolved current user through the OAuth request executor",
+      };
     });
 
     const runId = `mcp-live-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
@@ -840,8 +894,8 @@ async function validate(): Promise<void> {
       }
     }
   } finally {
-    await cleanupCreatedTasks(accessToken);
     await client.close().catch(() => undefined);
+    await cleanupCreatedTasks();
   }
 }
 
@@ -863,8 +917,8 @@ async function main(): Promise<void> {
     await validate();
   } catch (error) {
     record("validation_runtime", "unknown", errorDetail(error));
-    if (accessToken.length > 0 && createdTaskGids.size > 0) {
-      await cleanupCreatedTasks(accessToken);
+    if (createdTaskGids.size > 0) {
+      await cleanupCreatedTasks();
     }
   }
 

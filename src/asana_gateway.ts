@@ -9,7 +9,7 @@ import {
   TypeaheadApi,
   WorkspacesApi,
 } from "asana";
-import type { z } from "zod";
+import { z } from "zod";
 import { collectionEnvelope, singleObjectEnvelope } from "./asana_contracts.js";
 import type { Config } from "./config.js";
 import { CommandError } from "./errors.js";
@@ -20,7 +20,22 @@ const ASANA_ENABLE_HEADER = "Asana-Enable";
 const MAX_RETRY_ATTEMPTS = 3;
 const MAX_RETRY_AFTER_SECONDS = 60;
 const MAX_UPSTREAM_MESSAGE_LENGTH = 500;
+const MAX_OAUTH_RESPONSE_LENGTH = 64 * 1024;
+const MAX_ABORT_TIMEOUT_MS = 2_147_483_647;
+const OAUTH_EXPIRY_BUFFER_MS = 60_000;
+const ASANA_OAUTH_TOKEN_URL = "https://app.asana.com/-/oauth_token";
 const RETRY_JITTER_MS = 250;
+
+const OAuthTokenResponseSchema = z.object({
+  access_token: z.string().min(1),
+  expires_in: z
+    .number()
+    .int()
+    .positive()
+    .max(Number.MAX_SAFE_INTEGER / 1000),
+  token_type: z.string().refine((value) => value.toLowerCase() === "bearer"),
+  refresh_token: z.string().min(1).optional(),
+});
 
 const REQUEST_ID_HEADERS = ["x-asana-request-id", "asana-request-id", "x-request-id"] as const;
 
@@ -66,12 +81,23 @@ type RandomSource = () => number;
 
 type Clock = () => number;
 
+type FetchFn = typeof globalThis.fetch;
+
+type PersistOAuthRefreshToken = (refreshToken: string) => Promise<void>;
+
+type CachedOAuthToken = {
+  readonly accessToken: string;
+  readonly expiresAtMs: number;
+};
+
 export type AsanaRequestExecutorOptions = {
   clientFactory?: ClientFactory;
   resourceFactory?: ResourceFactory;
   sleep?: SleepFn;
   random?: RandomSource;
   clock?: Clock;
+  fetch?: FetchFn;
+  persistOAuthRefreshToken?: PersistOAuthRefreshToken;
   maxRetryAttempts?: number;
 };
 
@@ -186,6 +212,15 @@ function collectRequestId(
   }
 }
 
+function collectFetchRequestId(headers: Headers, trace: AsanaRequestTrace): void {
+  for (const headerName of REQUEST_ID_HEADERS) {
+    const value = headers.get(headerName);
+    if (value !== null && value.length > 0 && !trace.requestIds.includes(value)) {
+      trace.requestIds.push(value);
+    }
+  }
+}
+
 function isTimeoutError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {
     return false;
@@ -194,13 +229,35 @@ function isTimeoutError(error: unknown): boolean {
   const candidate = error as {
     timeout?: boolean;
     code?: string;
+    name?: string;
   };
 
   return (
     candidate.timeout === true ||
     candidate.code === "ETIMEDOUT" ||
-    candidate.code === "ECONNABORTED"
+    candidate.code === "ECONNABORTED" ||
+    candidate.name === "AbortError" ||
+    candidate.name === "TimeoutError"
   );
+}
+
+class AsanaSdkRequestFailure extends Error {
+  constructor(
+    readonly upstreamError: unknown,
+    readonly accessToken: string,
+  ) {
+    super("The Asana SDK request failed", { cause: upstreamError });
+  }
+}
+
+function unwrapRequestFailure(error: unknown): {
+  upstreamError: unknown;
+  accessToken: string;
+} {
+  if (error instanceof AsanaSdkRequestFailure) {
+    return error;
+  }
+  return { upstreamError: error, accessToken: "" };
 }
 
 function upstreamMessage(error: unknown, accessToken: string): string | undefined {
@@ -414,7 +471,11 @@ export class AsanaRequestExecutor {
   private readonly sleep: SleepFn;
   private readonly random: RandomSource;
   private readonly clock: Clock;
+  private readonly fetch: FetchFn;
+  private readonly persistOAuthRefreshToken: PersistOAuthRefreshToken | undefined;
   private readonly maxRetryAttempts: number;
+  private oauthRefreshToken: string;
+  private cachedOAuthToken: CachedOAuthToken | undefined;
 
   constructor(config: Config, options: AsanaRequestExecutorOptions = {}) {
     this.config = config;
@@ -423,7 +484,10 @@ export class AsanaRequestExecutor {
     this.sleep = options.sleep ?? defaultSleep;
     this.random = options.random ?? defaultRandom;
     this.clock = options.clock ?? defaultClock;
+    this.fetch = options.fetch ?? globalThis.fetch;
+    this.persistOAuthRefreshToken = options.persistOAuthRefreshToken;
     this.maxRetryAttempts = options.maxRetryAttempts ?? MAX_RETRY_ATTEMPTS;
+    this.oauthRefreshToken = config.authentication.refreshToken;
   }
 
   createTrace(): AsanaRequestTrace {
@@ -510,17 +574,29 @@ export class AsanaRequestExecutor {
       try {
         return await this.invokeRequest(options, trace, callback);
       } catch (error) {
+        const failure = unwrapRequestFailure(error);
         if (attempt >= this.maxRetryAttempts) {
-          throw normalizeUpstreamError(error, this.config.accessToken, trace, this.clock());
+          throw normalizeUpstreamError(
+            failure.upstreamError,
+            failure.accessToken,
+            trace,
+            this.clock(),
+          );
         }
 
         const status =
-          typeof error === "object" && error !== null
-            ? (error as { status?: number }).status
+          typeof failure.upstreamError === "object" && failure.upstreamError !== null
+            ? (failure.upstreamError as { status?: number }).status
             : undefined;
-        const retryAfter = status === 429 ? retryAfterSeconds(error, this.clock()) : undefined;
+        const retryAfter =
+          status === 429 ? retryAfterSeconds(failure.upstreamError, this.clock()) : undefined;
         if (retryAfter === undefined || retryAfter > MAX_RETRY_AFTER_SECONDS) {
-          throw normalizeUpstreamError(error, this.config.accessToken, trace, this.clock());
+          throw normalizeUpstreamError(
+            failure.upstreamError,
+            failure.accessToken,
+            trace,
+            this.clock(),
+          );
         }
 
         const delayMs = retryAfter * 1000 + Math.floor(this.random() * RETRY_JITTER_MS);
@@ -548,8 +624,147 @@ export class AsanaRequestExecutor {
     try {
       return await this.invokeRequest(options, trace, callback);
     } catch (error) {
-      throw normalizeUpstreamError(error, this.config.accessToken, trace, this.clock());
+      const failure = unwrapRequestFailure(error);
+      throw normalizeUpstreamError(failure.upstreamError, failure.accessToken, trace, this.clock());
     }
+  }
+
+  private async resolveAccessToken(
+    options: AsanaRequestOptions,
+    trace: AsanaRequestTrace,
+  ): Promise<string> {
+    const authentication = this.config.authentication;
+    const cachedToken = this.cachedOAuthToken;
+    if (cachedToken !== undefined) {
+      const lifetimeRemainingMs = cachedToken.expiresAtMs - this.clock();
+      if (lifetimeRemainingMs > OAUTH_EXPIRY_BUFFER_MS) {
+        return cachedToken.accessToken;
+      }
+    }
+
+    const refreshToken = this.oauthRefreshToken;
+    const token = await this.exchangeOAuthRefreshToken(
+      authentication.clientId,
+      authentication.clientSecret,
+      refreshToken,
+      options,
+      trace,
+    );
+    const nextRefreshToken = token.refresh_token ?? refreshToken;
+    if (token.refresh_token !== undefined && token.refresh_token !== refreshToken) {
+      await this.persistOAuthRefreshToken?.(token.refresh_token);
+    }
+    this.oauthRefreshToken = nextRefreshToken;
+    this.cachedOAuthToken = {
+      accessToken: token.access_token,
+      expiresAtMs: this.clock() + token.expires_in * 1000,
+    };
+    return token.access_token;
+  }
+
+  private async exchangeOAuthRefreshToken(
+    clientId: string,
+    clientSecret: string,
+    refreshToken: string,
+    options: AsanaRequestOptions,
+    trace: AsanaRequestTrace,
+  ): Promise<z.infer<typeof OAuthTokenResponseSchema>> {
+    const remaining = assertBudget(options.deadlineMs, this.clock());
+    const timeoutMs = Math.min(this.config.requestTimeoutMs, remaining, MAX_ABORT_TIMEOUT_MS);
+    const body = new URLSearchParams();
+    body.set("grant_type", "refresh_token");
+    body.set("refresh_token", refreshToken);
+    body.set("client_id", clientId);
+    body.set("client_secret", clientSecret);
+
+    let response: Response;
+    try {
+      response = await this.fetch(ASANA_OAUTH_TOKEN_URL, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      if (isTimeoutError(error)) {
+        throw new CommandError("request_timeout", "The Asana OAuth token refresh timed out", {
+          asanaRequestIds: [...trace.requestIds],
+          cause: error,
+        });
+      }
+      throw new CommandError("asana_api_error", "The Asana OAuth token refresh failed", {
+        asanaRequestIds: [...trace.requestIds],
+        cause: error,
+      });
+    }
+
+    collectFetchRequestId(response.headers, trace);
+    if (!response.ok) {
+      const errorOptions = {
+        details: { status: response.status },
+        asanaRequestIds: [...trace.requestIds],
+      };
+      if (response.status === 400 || response.status === 401) {
+        throw new CommandError(
+          "authentication_failed",
+          "Asana rejected the configured OAuth credentials",
+          errorOptions,
+        );
+      }
+      if (response.status === 403) {
+        throw new CommandError(
+          "permission_denied",
+          "Asana denied the OAuth token refresh",
+          errorOptions,
+        );
+      }
+      if (response.status === 429) {
+        throw new CommandError("rate_limited", "Asana rate limited the OAuth token refresh", {
+          asanaRequestIds: [...trace.requestIds],
+        });
+      }
+      throw new CommandError("asana_api_error", "The Asana OAuth token refresh failed", {
+        ...errorOptions,
+      });
+    }
+
+    let responseText: string;
+    try {
+      responseText = await response.text();
+    } catch (error) {
+      if (isTimeoutError(error)) {
+        throw new CommandError("request_timeout", "The Asana OAuth token refresh timed out", {
+          asanaRequestIds: [...trace.requestIds],
+          cause: error,
+        });
+      }
+      throw new CommandError("asana_api_error", "The Asana OAuth token refresh failed", {
+        asanaRequestIds: [...trace.requestIds],
+        cause: error,
+      });
+    }
+
+    if (responseText.length > MAX_OAUTH_RESPONSE_LENGTH) {
+      throw new CommandError("schema_drift", "The Asana OAuth token response was too large", {
+        asanaRequestIds: [...trace.requestIds],
+      });
+    }
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(responseText);
+    } catch (error) {
+      throw new CommandError("schema_drift", "The Asana OAuth token response was not valid JSON", {
+        asanaRequestIds: [...trace.requestIds],
+        cause: error,
+      });
+    }
+
+    const parsed = OAuthTokenResponseSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw decodeSchemaDrift(parsed.error, trace);
+    }
+    return parsed.data;
   }
 
   private async invokeRequest(
@@ -557,11 +772,12 @@ export class AsanaRequestExecutor {
     trace: AsanaRequestTrace,
     callback: (resources: AsanaResourceBundle) => Promise<AsanaHttpResult>,
   ): Promise<AsanaHttpResult> {
+    const accessToken = await this.resolveAccessToken(options, trace);
     const nowMs = this.clock();
     const remaining = assertBudget(options.deadlineMs, nowMs);
     const timeoutMs = Math.min(this.config.requestTimeoutMs, remaining);
     const client = this.clientFactory({
-      accessToken: this.config.accessToken,
+      accessToken,
       timeoutMs,
     });
     const resources = this.resourceFactory(client);
@@ -577,7 +793,7 @@ export class AsanaRequestExecutor {
         ).response;
         collectRequestId(response?.headers, trace);
       }
-      throw error;
+      throw new AsanaSdkRequestFailure(error, accessToken);
     }
   }
 }

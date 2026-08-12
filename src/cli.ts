@@ -1,13 +1,22 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import {
+  type AsanaOAuthLoginOptions,
+  loadAsanaOAuthLoginConfig,
+  runAsanaOAuthLogin,
+} from "./asana_oauth.js";
 import type { Config } from "./config.js";
 import { loadConfig } from "./config.js";
 import { runDoctor, validateDoctorArguments } from "./doctor.js";
 import { CommandError } from "./errors.js";
+import {
+  createDefaultOAuthCredentialStore,
+  type OAuthCredentialStore,
+} from "./oauth_credentials.js";
 import { buildMcpServer, type InjectedRequestContext } from "./server.js";
-import type { CommandServices } from "./services.js";
+import { buildServices, type CommandServices } from "./services.js";
 
-export const CLI_USAGE = "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL]]";
+export const CLI_USAGE = "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login]";
 
 type OutputWriter = {
   write(data: string): unknown;
@@ -21,6 +30,8 @@ export type RunCliOptions = {
   readonly services?: CommandServices;
   readonly requestContext?: InjectedRequestContext;
   readonly transport?: Transport;
+  readonly credentialStore?: OAuthCredentialStore;
+  readonly authLogin?: (options: AsanaOAuthLoginOptions) => Promise<void>;
 };
 
 function invalidCliUsage(): CommandError {
@@ -35,17 +46,46 @@ export async function runCli(options: RunCliOptions = {}): Promise<void> {
   const stderr = options.stderr ?? process.stderr;
 
   const [subcommand, ...subcommandArgs] = args;
-  if (subcommand !== undefined && subcommand !== "doctor") {
+  if (subcommand !== undefined && subcommand !== "doctor" && subcommand !== "auth") {
     throw invalidCliUsage();
+  }
+  if (subcommand === "auth") {
+    if (subcommandArgs.length !== 1 || subcommandArgs[0] !== "login") {
+      throw invalidCliUsage();
+    }
+    const env = options.env ?? process.env;
+    const credentialStore = options.credentialStore ?? createDefaultOAuthCredentialStore();
+    await (options.authLogin ?? runAsanaOAuthLogin)({
+      app: loadAsanaOAuthLoginConfig(env),
+      credentialStore,
+      stdout,
+      stderr,
+    });
+    return;
   }
   if (subcommand === "doctor") {
     validateDoctorArguments(subcommandArgs);
   }
 
-  const config: Config = loadConfig(options.env);
+  const env = options.env ?? process.env;
+  const credentialStore = options.credentialStore ?? createDefaultOAuthCredentialStore();
+  const oauthCredentials = await credentialStore.load();
+  const config: Config = loadConfig(env, { oauthCredentials });
+  const services =
+    options.services ??
+    buildServices(config, {
+      persistOAuthRefreshToken: async (refreshToken) => {
+        await credentialStore.save({
+          version: 1,
+          clientId: config.authentication.clientId,
+          clientSecret: config.authentication.clientSecret,
+          refreshToken,
+        });
+      },
+    });
   if (subcommand === "doctor") {
     const report = await runDoctor(subcommandArgs, config, {
-      ...(options.services === undefined ? {} : { services: options.services }),
+      services,
       ...(options.requestContext?.deadlineMs === undefined
         ? {}
         : { deadlineMs: options.requestContext.deadlineMs }),
@@ -55,7 +95,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<void> {
   }
 
   const server = buildMcpServer(config, {
-    ...(options.services === undefined ? {} : { services: options.services }),
+    services,
     ...(options.requestContext === undefined ? {} : { requestContext: options.requestContext }),
   });
   const transport = options.transport ?? new StdioServerTransport();
