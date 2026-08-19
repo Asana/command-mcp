@@ -4,6 +4,8 @@
 
 The server runs on your machine over stdio. It authenticates with Asana through OAuth, stores credentials in your operating system keychain, and refreshes access tokens automatically.
 
+> ⚠️ **By downloading or accessing this MCP, you agree to the [Command by Asana MCP Terms](https://asana.com/terms/command-mcp)**
+
 ## Requirements
 
 - Node.js 22 or newer
