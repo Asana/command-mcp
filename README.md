@@ -4,7 +4,12 @@
 
 The server runs on your machine over stdio. It authenticates with Asana through OAuth, stores credentials in your operating system keychain, and refreshes access tokens automatically.
 
-> ⚠️ **By downloading or accessing this MCP, you agree to the [Command by Asana MCP Terms](https://asana.com/terms/command-mcp)**
+> [!WARNING]
+> **By downloading or accessing this MCP, you agree to the [Command by Asana MCP Terms](https://asana.com/terms/command-mcp).**
+> 
+> **Beta software, provided as-is.** No warranties, express or implied, including fitness for a particular purpose.
+> Behavior may change without notice, and there is no guarantee of continued availability or support.
+> Use of this software is entirely at your own risk.
 
 ## Requirements
 
