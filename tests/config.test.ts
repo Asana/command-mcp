@@ -8,13 +8,21 @@ import {
   MAX_SCAN_BOUND,
 } from "../src/config.js";
 import { CommandError } from "../src/errors.js";
-import type { StoredOAuthCredentials } from "../src/oauth_credentials.js";
+import type {
+  StoredOAuthCredentials,
+  StoredPersonalAccessToken,
+} from "../src/oauth_credentials.js";
 
 const OAUTH_CREDENTIALS: StoredOAuthCredentials = {
   version: 1,
   clientId: "client-id",
   clientSecret: "client-secret",
   refreshToken: "refresh-token",
+};
+
+const PERSONAL_ACCESS_TOKEN: StoredPersonalAccessToken = {
+  version: 1,
+  personalAccessToken: "personal-access-token",
 };
 
 function env(overrides: Record<string, string | undefined>): NodeJS.ProcessEnv {
@@ -26,8 +34,8 @@ function loadAuthenticatedConfig(overrides: Record<string, string | undefined> =
 }
 
 describe("loadConfig", () => {
-  it("requires OAuth login when no keychain credentials are available", () => {
-    expect(() => loadConfig(env({}))).toThrowError(/auth login/);
+  it("requires a login when no keychain credentials are available", () => {
+    expect(() => loadConfig(env({}))).toThrowError(/Asana login is missing/);
   });
 
   it("does not accept a legacy access token as authentication", () => {
@@ -40,6 +48,7 @@ describe("loadConfig", () => {
     const config = loadAuthenticatedConfig({ ASANA_ACCESS_TOKEN: "legacy-token" });
 
     expect(config.authentication).toEqual({
+      type: "oauth",
       clientId: "client-id",
       clientSecret: "client-secret",
       refreshToken: "refresh-token",
@@ -50,9 +59,22 @@ describe("loadConfig", () => {
     const config = loadAuthenticatedConfig();
 
     expect(config.authentication).toEqual({
+      type: "oauth",
       clientId: "client-id",
       clientSecret: "client-secret",
       refreshToken: "refresh-token",
+    });
+  });
+
+  it("prefers a stored personal access token when OAuth credentials also exist", () => {
+    const config = loadConfig(env({}), {
+      personalAccessToken: PERSONAL_ACCESS_TOKEN,
+      oauthCredentials: OAUTH_CREDENTIALS,
+    });
+
+    expect(config.authentication).toEqual({
+      type: "pat",
+      accessToken: "personal-access-token",
     });
   });
 
@@ -79,6 +101,7 @@ describe("loadConfig", () => {
     const config = loadAuthenticatedConfig();
     expect(config).toEqual({
       authentication: {
+        type: "oauth",
         clientId: "client-id",
         clientSecret: "client-secret",
         refreshToken: "refresh-token",

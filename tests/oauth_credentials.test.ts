@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createKeychainOAuthCredentialStore,
+  createKeychainPersonalAccessTokenStore,
   type KeychainEntry,
 } from "../src/oauth_credentials.js";
 
@@ -91,6 +92,64 @@ describe("OAuth credential store", () => {
         clientSecret: "client-secret",
         refreshToken: "refresh-token",
       }),
+    ).rejects.toMatchObject({
+      code: "invalid_configuration",
+      message: "The operating system keychain is unavailable",
+    });
+  });
+});
+
+describe("personal access token store", () => {
+  it("returns null when no token has been stored", async () => {
+    const { entry } = createEntry();
+    const store = createKeychainPersonalAccessTokenStore(entry);
+
+    await expect(store.load()).resolves.toBeNull();
+  });
+
+  it("stores the personal access token in the operating system keychain", async () => {
+    const { entry, passwords } = createEntry();
+    const store = createKeychainPersonalAccessTokenStore(entry);
+
+    await store.save({ version: 1, personalAccessToken: "personal-access-token" });
+
+    await expect(store.load()).resolves.toEqual({
+      version: 1,
+      personalAccessToken: "personal-access-token",
+    });
+    expect(passwords).toEqual([
+      JSON.stringify({ version: 1, personalAccessToken: "personal-access-token" }),
+    ]);
+    expect(store.location).toBe("operating system keychain");
+  });
+
+  it("fails closed when a stored token does not match its schema", async () => {
+    const { entry } = createEntry(JSON.stringify({ version: 1, personalAccessToken: "   " }));
+    const store = createKeychainPersonalAccessTokenStore(entry);
+
+    await expect(store.load()).rejects.toMatchObject({
+      code: "invalid_configuration",
+      message: "The stored Asana personal access token is invalid; run auth login again",
+    });
+  });
+
+  it("fails closed when the operating system keychain is unavailable", async () => {
+    const entry: KeychainEntry = {
+      getPassword: async () => {
+        throw new Error("keychain secret");
+      },
+      setPassword: async () => {
+        throw new Error("keychain secret");
+      },
+    };
+    const store = createKeychainPersonalAccessTokenStore(entry);
+
+    await expect(store.load()).rejects.toMatchObject({
+      code: "invalid_configuration",
+      message: "The operating system keychain is unavailable",
+    });
+    await expect(
+      store.save({ version: 1, personalAccessToken: "personal-access-token" }),
     ).rejects.toMatchObject({
       code: "invalid_configuration",
       message: "The operating system keychain is unavailable",

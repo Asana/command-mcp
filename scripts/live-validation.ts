@@ -9,7 +9,10 @@ import { z } from "zod";
 import type { AsanaRequestExecutorPort } from "../src/asana_gateway.js";
 import { loadConfig } from "../src/config.js";
 import { CommandError } from "../src/errors.js";
-import { createDefaultOAuthCredentialStore } from "../src/oauth_credentials.js";
+import {
+  createDefaultOAuthCredentialStore,
+  createDefaultPersonalAccessTokenStore,
+} from "../src/oauth_credentials.js";
 import { buildServices, type CommandServices } from "../src/services.js";
 
 type Status = "pass" | "fail" | "unknown";
@@ -133,21 +136,30 @@ function dateFromNow(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
 }
 
-async function createOAuthServices(): Promise<CommandServices> {
-  const credentialStore = createDefaultOAuthCredentialStore();
-  const oauthCredentials = await credentialStore.load();
-  if (oauthCredentials === null) {
+async function createAuthenticatedServices(): Promise<CommandServices> {
+  const personalAccessTokenStore = createDefaultPersonalAccessTokenStore();
+  const personalAccessToken = await personalAccessTokenStore.load();
+  const oauthCredentialStore = createDefaultOAuthCredentialStore();
+  const oauthCredentials = personalAccessToken === null ? await oauthCredentialStore.load() : null;
+  if (personalAccessToken === null && oauthCredentials === null) {
     throw new EvidenceError("unknown", "run asana-command-mcp auth login first");
   }
-  const config = loadConfig({ ...process.env, ASANA_READ_ONLY: "false" }, { oauthCredentials });
+  const config = loadConfig(
+    { ...process.env, ASANA_READ_ONLY: "false" },
+    { personalAccessToken, oauthCredentials },
+  );
   return buildServices(config, {
-    persistOAuthRefreshToken: async (refreshToken) =>
-      credentialStore.save({
+    persistOAuthRefreshToken: async (refreshToken) => {
+      if (config.authentication.type !== "oauth") {
+        return;
+      }
+      await oauthCredentialStore.save({
         version: 1,
         clientId: config.authentication.clientId,
         clientSecret: config.authentication.clientSecret,
         refreshToken,
-      }),
+      });
+    },
   });
 }
 
@@ -210,7 +222,7 @@ async function cleanupCreatedTasks(): Promise<void> {
     return;
   }
 
-  const services = await createOAuthServices();
+  const services = await createAuthenticatedServices();
   const failed: string[] = [];
   for (const gid of [...createdTaskGids].reverse()) {
     try {
@@ -414,7 +426,7 @@ async function validate(): Promise<void> {
   let preflightSchema: Awaited<ReturnType<CommandServices["schemaDiscovery"]["discover"]>>;
   let preflightAssigneeGid: string;
   try {
-    preflightServices = await createOAuthServices();
+    preflightServices = await createAuthenticatedServices();
     preflightSchema = await preflightServices.schemaDiscovery.discover(
       teamspaceId,
       Date.now() + CALL_TIMEOUT_MS,

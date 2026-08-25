@@ -2,7 +2,7 @@
 
 `@asana/command-mcp` is a local [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for working with Asana Command tickets from Claude Code or Codex.
 
-The server runs on your machine over stdio. It authenticates with Asana through OAuth, stores credentials in your operating system keychain, and refreshes access tokens automatically.
+The server runs on your machine over stdio. By default, it authenticates with an Asana personal access token (PAT) stored in your operating system keychain. OAuth is also supported as a fallback.
 
 > [!WARNING]
 > **By downloading or accessing this MCP, you agree to the [Command by Asana MCP Terms](https://asana.com/terms/command-mcp).**
@@ -15,27 +15,9 @@ The server runs on your machine over stdio. It authenticates with Asana through 
 
 - Node.js 22 or newer
 - An Asana account
-- An Asana OAuth application
 - Claude Code or Codex
 
-## 1. Create an Asana OAuth application
-
-1. Open the [Asana developer console](https://app.asana.com/0/my-apps).
-2. Create an OAuth application.
-3. Add this redirect URL:
-
-   ```text
-   urn:ietf:wg:oauth:2.0:oob
-   ```
-
-4. Select **Full permissions**. The custom-types API required for Command schema discovery does not currently support granular OAuth scopes.
-5. Copy the client ID and client secret.
-
-Keep the client secret private. Do not commit it to this repository or add it to an MCP configuration file.
-
-See [Asana's OAuth documentation](https://developers.asana.com/docs/oauth) for application settings.
-
-## 2. Download the package
+## 1. Download the package
 
 Sign in to GitHub with an account that can access this private repository, then:
 
@@ -51,28 +33,56 @@ export ASANA_COMMAND_MCP_PACKAGE="/absolute/path/to/asana-command-mcp-0.1.0.tgz"
 
 Use an absolute path. MCP clients do not reliably expand `~` in their configuration.
 
-## 3. Sign in to Asana
+## 2. Create a personal access token
 
-Set the OAuth application credentials in your terminal:
+1. Open the [Asana developer console](https://app.asana.com/0/my-apps).
+2. Select **Create new token**.
+3. Name and create the token, then copy it immediately. Asana displays it only once.
+
+A PAT has the same Asana permissions as the user who created it. Treat it like a password.
+
+## 3. Save the personal access token
+
+Run the login command:
+
+```sh
+npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp auth login
+```
+
+Paste the PAT at the prompt and press Enter. The command stores it in your operating system keychain; it does not add the token to your shell environment or MCP configuration.
+
+<details>
+<summary>Use OAuth instead</summary>
+
+OAuth requires an Asana OAuth application and is used only when no PAT is stored in the keychain.
+
+1. Open the [Asana developer console](https://app.asana.com/0/my-apps) and create an OAuth application.
+2. Add `urn:ietf:wg:oauth:2.0:oob` as a redirect URL.
+3. Select **Full permissions**. The custom-types API required for Command schema discovery does not currently support granular OAuth scopes.
+4. Copy the client ID and client secret, then set them in the terminal:
 
 ```sh
 export ASANA_OAUTH_CLIENT_ID="your-client-id"
 export ASANA_OAUTH_CLIENT_SECRET="your-client-secret"
 ```
 
-Start the login flow:
+Start OAuth login explicitly:
 
 ```sh
-npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp auth login
+npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp auth login --oauth
 ```
 
-The command opens Asana in your browser. Authorize the application, copy the code shown by Asana, and paste it into the terminal.
+The command opens Asana in your browser. Authorize the application, copy the one-time code shown by Asana, and paste it into the terminal.
 
 After login, the client ID, client secret, and refresh token are stored in the operating system keychain. The access token is kept only in memory and refreshed automatically. You can remove the login variables from your shell:
 
 ```sh
 unset ASANA_OAUTH_CLIENT_ID ASANA_OAUTH_CLIENT_SECRET
 ```
+
+Keep the client secret private. Do not commit it or add it to an MCP configuration file. See [Asana's OAuth documentation](https://developers.asana.com/docs/oauth) for application settings.
+
+</details>
 
 ## 4. Add the server to Claude Code
 
@@ -116,7 +126,7 @@ See the [Codex MCP documentation](https://developers.openai.com/codex/mcp) for o
 
 ## Check the connection
 
-Check OAuth credentials and Asana access:
+Check the stored credentials and Asana access:
 
 ```sh
 npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp doctor
@@ -128,21 +138,21 @@ To also validate a Command Teamspace, pass its project GID or URL:
 npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp doctor "TEAMSPACE_ID_OR_URL"
 ```
 
-If authentication stops working, run `auth login` again, then restart Claude Code or Codex so it starts the MCP server with the new credentials.
+If authentication stops working, run `auth login` again for a PAT or `auth login --oauth` for OAuth, then restart Claude Code or Codex so it starts the MCP server with the new credentials.
 
 ## Configuration
 
 | Environment variable | Default | Description |
 | --- | --- | --- |
-| `ASANA_OAUTH_CLIENT_ID` | None | OAuth client ID used only by `auth login`. |
-| `ASANA_OAUTH_CLIENT_SECRET` | None | OAuth client secret used only by `auth login`. |
+| `ASANA_OAUTH_CLIENT_ID` | None | OAuth client ID used only by `auth login --oauth`. |
+| `ASANA_OAUTH_CLIENT_SECRET` | None | OAuth client secret used only by `auth login --oauth`. |
 | `ASANA_READ_ONLY` | `false` | Set to `true` to remove all write tools. |
 | `ASANA_MAX_SCAN_TASKS` | `1000` | Maximum number of tasks scanned by bounded operations. Maximum: `10000`. |
 | `ASANA_CREATE_TIMEOUT_SECONDS` | `30` | Time allowed for ticket custom-type initialization. |
 | `ASANA_REQUEST_TIMEOUT_MS` | `20000` | Timeout for one Asana API request. |
 | `ASANA_TOOL_TIMEOUT_MS` | `120000` | Overall timeout for one tool call. |
 
-A local untracked `.env` file can be used instead of shell exports. Do not commit credentials.
+A local untracked `.env` file can be used for non-secret settings and the temporary OAuth login variables. Do not commit credentials.
 
 ## Tools
 
@@ -180,8 +190,8 @@ Every scoped call performs a fresh Teamspace schema discovery. Ticket identifier
 
 ## Notes
 
-- OAuth credentials require an available and unlocked macOS Keychain, Windows Credential Manager, or Linux secret store. Plaintext credential storage is not supported.
-- Asana displays a one-time authorization code during login. Copy it into the terminal to finish authentication.
+- Authentication requires an available and unlocked macOS Keychain, Windows Credential Manager, or Linux secret store. Plaintext credential storage is not supported.
+- A stored PAT takes precedence. When no PAT is stored, the server falls back to stored OAuth credentials.
 - Teamspace schema discovery currently relies on English field and option names.
 - Asana search is eventually consistent, so recent changes may take time to appear in search results.
 

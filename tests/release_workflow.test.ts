@@ -18,7 +18,7 @@ describe("release workflow", () => {
   it("executes and uploads the packed tarball", () => {
     expect(workflow).toContain('npx --yes --package "$ARCHIVE" asana-command-mcp doctor');
     expect(workflow).not.toContain("ASANA_ACCESS_TOKEN");
-    expect(workflow).toContain("Asana OAuth login is missing; run asana-command-mcp auth login");
+    expect(workflow).toContain("Asana login is missing; run asana-command-mcp auth login");
     expect(workflow).toContain("softprops/action-gh-release@");
     expect(workflow).toContain("files: $" + "{{ steps.pack.outputs.archive }}");
   });

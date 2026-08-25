@@ -2,7 +2,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "vitest";
 import { runCli } from "../src/cli.js";
-import type { OAuthCredentialStore } from "../src/oauth_credentials.js";
+import type { OAuthCredentialStore, PersonalAccessTokenStore } from "../src/oauth_credentials.js";
 import {
   createDiscoveryState,
   createTestContainer,
@@ -31,7 +31,7 @@ function createWriter(lines: string[]) {
   };
 }
 
-function createCredentialStore(): OAuthCredentialStore {
+function createOAuthCredentialStore(): OAuthCredentialStore {
   return {
     location: "operating system keychain",
     load: async () => ({
@@ -40,6 +40,16 @@ function createCredentialStore(): OAuthCredentialStore {
       clientSecret: "client-secret",
       refreshToken: "refresh-token",
     }),
+    save: async () => undefined,
+  };
+}
+
+function createPersonalAccessTokenStore(
+  personalAccessToken: string | null = null,
+): PersonalAccessTokenStore {
+  return {
+    location: "operating system keychain",
+    load: async () => (personalAccessToken === null ? null : { version: 1, personalAccessToken }),
     save: async () => undefined,
   };
 }
@@ -61,9 +71,9 @@ class RecordingTransport implements Transport {
 }
 
 describe("CLI", () => {
-  it("runs auth login without loading normal server configuration", async () => {
+  it("runs personal access token login by default without loading server configuration", async () => {
     const calls: string[] = [];
-    const credentialStore: OAuthCredentialStore = {
+    const credentialStore: PersonalAccessTokenStore = {
       location: "operating system keychain",
       load: async () => null,
       save: async () => undefined,
@@ -71,12 +81,9 @@ describe("CLI", () => {
 
     await runCli({
       args: ["auth", "login"],
-      env: {
-        ASANA_OAUTH_CLIENT_ID: "client-id",
-        ASANA_OAUTH_CLIENT_SECRET: "client-secret",
-      },
-      credentialStore,
-      authLogin: async (options) => {
+      env: {},
+      personalAccessTokenStore: credentialStore,
+      personalAccessTokenLogin: async (options) => {
         expect(options.credentialStore).toBe(credentialStore);
         calls.push("login");
       },
@@ -85,7 +92,53 @@ describe("CLI", () => {
     expect(calls).toEqual(["login"]);
   });
 
-  it("loads the stored refresh token before starting in OAuth mode", async () => {
+  it("runs OAuth login when requested explicitly", async () => {
+    const calls: string[] = [];
+    const credentialStore = createOAuthCredentialStore();
+
+    await runCli({
+      args: ["auth", "login", "--oauth"],
+      env: {
+        ASANA_OAUTH_CLIENT_ID: "client-id",
+        ASANA_OAUTH_CLIENT_SECRET: "client-secret",
+      },
+      oauthCredentialStore: credentialStore,
+      oauthLogin: async (options) => {
+        expect(options.credentialStore).toBe(credentialStore);
+        calls.push("oauth-login");
+      },
+    });
+
+    expect(calls).toEqual(["oauth-login"]);
+  });
+
+  it("uses a stored personal access token without loading OAuth credentials", async () => {
+    const events: string[] = [];
+    let oauthLoads = 0;
+    const oauthCredentialStore: OAuthCredentialStore = {
+      ...createOAuthCredentialStore(),
+      load: async () => {
+        oauthLoads += 1;
+        return null;
+      },
+    };
+
+    await runCli({
+      args: [],
+      env: {},
+      personalAccessTokenStore: createPersonalAccessTokenStore("personal-access-token"),
+      oauthCredentialStore,
+      services: createDoctorServices(),
+      transport: new RecordingTransport(events),
+      stdout: createWriter([]),
+      stderr: createWriter([]),
+    });
+
+    expect(oauthLoads).toBe(0);
+    expect(events).toEqual(["connected"]);
+  });
+
+  it("falls back to stored OAuth credentials when no personal access token exists", async () => {
     const events: string[] = [];
     const credentialStore: OAuthCredentialStore = {
       location: "operating system keychain",
@@ -101,7 +154,8 @@ describe("CLI", () => {
     await runCli({
       args: [],
       env: {},
-      credentialStore,
+      personalAccessTokenStore: createPersonalAccessTokenStore(),
+      oauthCredentialStore: credentialStore,
       services: createDoctorServices(),
       transport: new RecordingTransport(events),
       stdout: createWriter([]),
@@ -111,7 +165,7 @@ describe("CLI", () => {
     expect(events).toEqual(["connected"]);
   });
 
-  it("loads OAuth credentials from the keychain when a legacy access-token variable exists", async () => {
+  it("ignores a legacy access-token variable and falls back to the keychain", async () => {
     const events: string[] = [];
     let loads = 0;
     const credentialStore: OAuthCredentialStore = {
@@ -131,7 +185,8 @@ describe("CLI", () => {
     await runCli({
       args: [],
       env: { ASANA_ACCESS_TOKEN: "test-token" },
-      credentialStore,
+      personalAccessTokenStore: createPersonalAccessTokenStore(),
+      oauthCredentialStore: credentialStore,
       services: createDoctorServices(),
       transport: new RecordingTransport(events),
       stdout: createWriter([]),
@@ -145,7 +200,7 @@ describe("CLI", () => {
   it("rejects incomplete auth subcommands before loading configuration", async () => {
     await expect(runCli({ args: ["auth"], env: {} })).rejects.toMatchObject({
       code: "invalid_input",
-      message: "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login]",
+      message: "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login [--oauth]]",
     });
   });
 
@@ -156,7 +211,8 @@ describe("CLI", () => {
     await runCli({
       args: ["doctor"],
       env: {},
-      credentialStore: createCredentialStore(),
+      personalAccessTokenStore: createPersonalAccessTokenStore(),
+      oauthCredentialStore: createOAuthCredentialStore(),
       services: createDoctorServices(),
       requestContext: { deadlineMs: 8_000_000 },
       stdout: createWriter(stdout),
@@ -177,7 +233,8 @@ describe("CLI", () => {
     await runCli({
       args: ["doctor", TEAMSPACE_URL],
       env: {},
-      credentialStore: createCredentialStore(),
+      personalAccessTokenStore: createPersonalAccessTokenStore(),
+      oauthCredentialStore: createOAuthCredentialStore(),
       services: createDoctorServices(),
       stdout: createWriter(stdout),
     });
@@ -213,7 +270,7 @@ describe("CLI", () => {
   it("rejects unknown subcommands before loading configuration", async () => {
     await expect(runCli({ args: ["serve"], env: {} })).rejects.toMatchObject({
       code: "invalid_input",
-      message: "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login]",
+      message: "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login [--oauth]]",
     });
   });
 
@@ -230,7 +287,8 @@ describe("CLI", () => {
     await runCli({
       args: [],
       env: { ASANA_READ_ONLY: "true" },
-      credentialStore: createCredentialStore(),
+      personalAccessTokenStore: createPersonalAccessTokenStore(),
+      oauthCredentialStore: createOAuthCredentialStore(),
       services: createDoctorServices(),
       stdout: createWriter(stdout),
       stderr,
