@@ -474,7 +474,7 @@ export class AsanaRequestExecutor {
   private readonly fetch: FetchFn;
   private readonly persistOAuthRefreshToken: PersistOAuthRefreshToken | undefined;
   private readonly maxRetryAttempts: number;
-  private oauthRefreshToken: string;
+  private oauthRefreshToken: string | undefined;
   private cachedOAuthToken: CachedOAuthToken | undefined;
 
   constructor(config: Config, options: AsanaRequestExecutorOptions = {}) {
@@ -487,7 +487,8 @@ export class AsanaRequestExecutor {
     this.fetch = options.fetch ?? globalThis.fetch;
     this.persistOAuthRefreshToken = options.persistOAuthRefreshToken;
     this.maxRetryAttempts = options.maxRetryAttempts ?? MAX_RETRY_ATTEMPTS;
-    this.oauthRefreshToken = config.authentication.refreshToken;
+    this.oauthRefreshToken =
+      config.authentication.type === "oauth" ? config.authentication.refreshToken : undefined;
   }
 
   createTrace(): AsanaRequestTrace {
@@ -634,6 +635,9 @@ export class AsanaRequestExecutor {
     trace: AsanaRequestTrace,
   ): Promise<string> {
     const authentication = this.config.authentication;
+    if (authentication.type === "pat") {
+      return authentication.accessToken;
+    }
     const cachedToken = this.cachedOAuthToken;
     if (cachedToken !== undefined) {
       const lifetimeRemainingMs = cachedToken.expiresAtMs - this.clock();
@@ -642,7 +646,7 @@ export class AsanaRequestExecutor {
       }
     }
 
-    const refreshToken = this.oauthRefreshToken;
+    const refreshToken = this.oauthRefreshToken ?? authentication.refreshToken;
     const token = await this.exchangeOAuthRefreshToken(
       authentication.clientId,
       authentication.clientSecret,

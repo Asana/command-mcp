@@ -5,18 +5,25 @@ import {
   loadAsanaOAuthLoginConfig,
   runAsanaOAuthLogin,
 } from "./asana_oauth.js";
+import {
+  type AsanaPersonalAccessTokenLoginOptions,
+  runAsanaPersonalAccessTokenLogin,
+} from "./asana_pat.js";
 import type { Config } from "./config.js";
 import { loadConfig } from "./config.js";
 import { runDoctor, validateDoctorArguments } from "./doctor.js";
 import { CommandError } from "./errors.js";
 import {
   createDefaultOAuthCredentialStore,
+  createDefaultPersonalAccessTokenStore,
   type OAuthCredentialStore,
+  type PersonalAccessTokenStore,
 } from "./oauth_credentials.js";
 import { buildMcpServer, type InjectedRequestContext } from "./server.js";
 import { buildServices, type CommandServices } from "./services.js";
 
-export const CLI_USAGE = "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login]";
+export const CLI_USAGE =
+  "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login [--oauth]]";
 
 type OutputWriter = {
   write(data: string): unknown;
@@ -30,8 +37,12 @@ export type RunCliOptions = {
   readonly services?: CommandServices;
   readonly requestContext?: InjectedRequestContext;
   readonly transport?: Transport;
-  readonly credentialStore?: OAuthCredentialStore;
-  readonly authLogin?: (options: AsanaOAuthLoginOptions) => Promise<void>;
+  readonly oauthCredentialStore?: OAuthCredentialStore;
+  readonly personalAccessTokenStore?: PersonalAccessTokenStore;
+  readonly oauthLogin?: (options: AsanaOAuthLoginOptions) => Promise<void>;
+  readonly personalAccessTokenLogin?: (
+    options: AsanaPersonalAccessTokenLoginOptions,
+  ) => Promise<void>;
 };
 
 function invalidCliUsage(): CommandError {
@@ -50,17 +61,32 @@ export async function runCli(options: RunCliOptions = {}): Promise<void> {
     throw invalidCliUsage();
   }
   if (subcommand === "auth") {
-    if (subcommandArgs.length !== 1 || subcommandArgs[0] !== "login") {
+    const isPersonalAccessTokenLogin = subcommandArgs.length === 1 && subcommandArgs[0] === "login";
+    const isOAuthLogin =
+      subcommandArgs.length === 2 &&
+      subcommandArgs[0] === "login" &&
+      subcommandArgs[1] === "--oauth";
+    if (!isPersonalAccessTokenLogin && !isOAuthLogin) {
       throw invalidCliUsage();
     }
-    const env = options.env ?? process.env;
-    const credentialStore = options.credentialStore ?? createDefaultOAuthCredentialStore();
-    await (options.authLogin ?? runAsanaOAuthLogin)({
-      app: loadAsanaOAuthLoginConfig(env),
-      credentialStore,
-      stdout,
-      stderr,
-    });
+    if (isOAuthLogin) {
+      const env = options.env ?? process.env;
+      const credentialStore = options.oauthCredentialStore ?? createDefaultOAuthCredentialStore();
+      await (options.oauthLogin ?? runAsanaOAuthLogin)({
+        app: loadAsanaOAuthLoginConfig(env),
+        credentialStore,
+        stdout,
+        stderr,
+      });
+    } else {
+      const credentialStore =
+        options.personalAccessTokenStore ?? createDefaultPersonalAccessTokenStore();
+      await (options.personalAccessTokenLogin ?? runAsanaPersonalAccessTokenLogin)({
+        credentialStore,
+        stdout,
+        stderr,
+      });
+    }
     return;
   }
   if (subcommand === "doctor") {
@@ -68,14 +94,20 @@ export async function runCli(options: RunCliOptions = {}): Promise<void> {
   }
 
   const env = options.env ?? process.env;
-  const credentialStore = options.credentialStore ?? createDefaultOAuthCredentialStore();
-  const oauthCredentials = await credentialStore.load();
-  const config: Config = loadConfig(env, { oauthCredentials });
+  const personalAccessTokenStore =
+    options.personalAccessTokenStore ?? createDefaultPersonalAccessTokenStore();
+  const personalAccessToken = await personalAccessTokenStore.load();
+  const oauthCredentialStore = options.oauthCredentialStore ?? createDefaultOAuthCredentialStore();
+  const oauthCredentials = personalAccessToken === null ? await oauthCredentialStore.load() : null;
+  const config: Config = loadConfig(env, { personalAccessToken, oauthCredentials });
   const services =
     options.services ??
     buildServices(config, {
       persistOAuthRefreshToken: async (refreshToken) => {
-        await credentialStore.save({
+        if (config.authentication.type !== "oauth") {
+          return;
+        }
+        await oauthCredentialStore.save({
           version: 1,
           clientId: config.authentication.clientId,
           clientSecret: config.authentication.clientSecret,

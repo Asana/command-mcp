@@ -1,12 +1,14 @@
 import { UsersApi } from "asana";
 import { z } from "zod";
 import type { AsanaRequestExecutorPort } from "../../src/asana_gateway.js";
-import type { Config } from "../../src/config.js";
+import { type Config, loadConfig } from "../../src/config.js";
 import { CommandError } from "../../src/errors.js";
 import {
   createDefaultOAuthCredentialStore,
+  createDefaultPersonalAccessTokenStore,
   type OAuthCredentialStore,
   type StoredOAuthCredentials,
+  type StoredPersonalAccessToken,
 } from "../../src/oauth_credentials.js";
 import { buildServices, type CommandServices } from "../../src/services.js";
 
@@ -14,8 +16,9 @@ const CLEANUP_ATTEMPTS = 3;
 const CLEANUP_RETRY_DELAY_MS = 1_000;
 
 export type IntegrationEnvironment = {
-  oauthCredentials: StoredOAuthCredentials;
-  credentialStore: OAuthCredentialStore;
+  personalAccessToken: StoredPersonalAccessToken | null;
+  oauthCredentials: StoredOAuthCredentials | null;
+  oauthCredentialStore: OAuthCredentialStore;
   teamspaceId: string;
   secondTeamspaceId?: string;
   disposable: boolean;
@@ -41,17 +44,20 @@ export async function readIntegrationEnvironment(env: NodeJS.ProcessEnv): Promis
     };
   }
 
-  const credentialStore = createDefaultOAuthCredentialStore();
+  const personalAccessTokenStore = createDefaultPersonalAccessTokenStore();
+  const oauthCredentialStore = createDefaultOAuthCredentialStore();
+  let personalAccessToken: StoredPersonalAccessToken | null;
   let oauthCredentials: StoredOAuthCredentials | null;
   try {
-    oauthCredentials = await credentialStore.load();
+    personalAccessToken = await personalAccessTokenStore.load();
+    oauthCredentials = personalAccessToken === null ? await oauthCredentialStore.load() : null;
   } catch {
     return {
       ready: false,
       reason: "live Asana tests skipped: the operating system keychain is unavailable",
     };
   }
-  if (oauthCredentials === null) {
+  if (personalAccessToken === null && oauthCredentials === null) {
     return {
       ready: false,
       reason: "live Asana tests skipped: run asana-command-mcp auth login first",
@@ -63,7 +69,8 @@ export async function readIntegrationEnvironment(env: NodeJS.ProcessEnv): Promis
     ready: true,
     environment: {
       oauthCredentials,
-      credentialStore,
+      personalAccessToken,
+      oauthCredentialStore,
       teamspaceId,
       ...(secondTeamspaceId ? { secondTeamspaceId } : {}),
       disposable: env.ASANA_INTEGRATION_TEST_DISPOSABLE === "true",
@@ -72,31 +79,35 @@ export async function readIntegrationEnvironment(env: NodeJS.ProcessEnv): Promis
 }
 
 export function integrationConfig(environment: IntegrationEnvironment): Config {
-  return {
-    authentication: {
-      clientId: environment.oauthCredentials.clientId,
-      clientSecret: environment.oauthCredentials.clientSecret,
-      refreshToken: environment.oauthCredentials.refreshToken,
+  return loadConfig(
+    {
+      ASANA_READ_ONLY: "false",
+      ASANA_MAX_SCAN_TASKS: "1000",
+      ASANA_CREATE_TIMEOUT_SECONDS: "30",
+      ASANA_REQUEST_TIMEOUT_MS: "20000",
+      ASANA_TOOL_TIMEOUT_MS: "120000",
     },
-    readOnly: false,
-    maxScanTasks: 1_000,
-    createTimeoutMs: 30_000,
-    requestTimeoutMs: 20_000,
-    toolTimeoutMs: 120_000,
-  };
+    {
+      personalAccessToken: environment.personalAccessToken,
+      oauthCredentials: environment.oauthCredentials,
+    },
+  );
 }
 
 export function createIntegrationServices(environment: IntegrationEnvironment): CommandServices {
   const config = integrationConfig(environment);
   return buildServices(config, {
     persistOAuthRefreshToken: async (refreshToken) => {
+      if (config.authentication.type !== "oauth") {
+        return;
+      }
       const oauthCredentials: StoredOAuthCredentials = {
         version: 1,
         clientId: config.authentication.clientId,
         clientSecret: config.authentication.clientSecret,
         refreshToken,
       };
-      await environment.credentialStore.save(oauthCredentials);
+      await environment.oauthCredentialStore.save(oauthCredentials);
       environment.oauthCredentials = oauthCredentials;
     },
   });

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CommandError } from "./errors.js";
-import type { StoredOAuthCredentials } from "./oauth_credentials.js";
+import type { StoredOAuthCredentials, StoredPersonalAccessToken } from "./oauth_credentials.js";
 
 export const DEFAULT_SCAN_BOUND = 1000;
 export const MAX_SCAN_BOUND = 10000;
@@ -8,11 +8,18 @@ export const DEFAULT_CREATE_TIMEOUT_MS = 30_000;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
 export const DEFAULT_TOOL_TIMEOUT_MS = 120_000;
 
-const AsanaAuthenticationSchema = z.object({
-  clientId: z.string().min(1),
-  clientSecret: z.string().min(1),
-  refreshToken: z.string().min(1),
-});
+const AsanaAuthenticationSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("pat"),
+    accessToken: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("oauth"),
+    clientId: z.string().min(1),
+    clientSecret: z.string().min(1),
+    refreshToken: z.string().min(1),
+  }),
+]);
 
 const ConfigSchema = z.object({
   authentication: AsanaAuthenticationSchema,
@@ -31,13 +38,23 @@ function invalidConfig(variableName: string): never {
 }
 
 export type LoadConfigOptions = {
+  readonly personalAccessToken?: StoredPersonalAccessToken | null;
   readonly oauthCredentials?: StoredOAuthCredentials | null;
 };
 
 function loadAuthentication(options: LoadConfigOptions): AsanaAuthentication {
+  const personalAccessToken = options.personalAccessToken;
+  if (personalAccessToken !== undefined && personalAccessToken !== null) {
+    return {
+      type: "pat",
+      accessToken: personalAccessToken.personalAccessToken,
+    };
+  }
+
   const oauthCredentials = options.oauthCredentials;
   if (oauthCredentials !== undefined && oauthCredentials !== null) {
     return {
+      type: "oauth",
       clientId: oauthCredentials.clientId,
       clientSecret: oauthCredentials.clientSecret,
       refreshToken: oauthCredentials.refreshToken,
@@ -46,7 +63,7 @@ function loadAuthentication(options: LoadConfigOptions): AsanaAuthentication {
 
   throw new CommandError(
     "invalid_configuration",
-    "Asana OAuth login is missing; run asana-command-mcp auth login",
+    "Asana login is missing; run asana-command-mcp auth login",
   );
 }
 

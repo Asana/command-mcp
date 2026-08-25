@@ -12,6 +12,7 @@ import type { WorkflowService } from "../../src/tools/workflow.js";
 
 export const CONFIG: Config = {
   authentication: {
+    type: "oauth",
     clientId: "test-client-id",
     clientSecret: "test-client-secret",
     refreshToken: "test-refresh-token",

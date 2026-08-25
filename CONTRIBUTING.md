@@ -39,7 +39,7 @@ Include the command's complete, unfiltered output in the pull-request descriptio
 
 ## Live Asana integration suite
 
-Use only a Teamspace in which the test-created tickets may be safely deleted. Run `asana-command-mcp auth login` first so OAuth credentials are available in the operating system keychain. A full integration run, including writes, then requires the Teamspace and explicit disposable acknowledgement:
+Use only a Teamspace in which the test-created tickets may be safely deleted. Run `asana-command-mcp auth login` first so a PAT is available in the operating system keychain, or use `auth login --oauth` for OAuth. A full integration run, including writes, then requires the Teamspace and explicit disposable acknowledgement:
 
 ```sh
 ASANA_INTEGRATION_TEST_TEAMSPACE="<disposable-teamspace-id>" \
@@ -47,7 +47,7 @@ ASANA_INTEGRATION_TEST_DISPOSABLE=true \
 npm run test:integration
 ```
 
-- OAuth credentials from `auth login` are required for any live integration test.
+- A PAT from `auth login`, or OAuth credentials from `auth login --oauth`, is required for any live integration test.
 - `ASANA_INTEGRATION_TEST_TEAMSPACE` is required and identifies the test Teamspace.
 - `ASANA_INTEGRATION_TEST_DISPOSABLE=true` is required for destructive lifecycle tests. Omitting it skips writes; using any value other than the lowercase string `true` does not enable them.
 - `ASANA_INTEGRATION_TEST_SECOND_TEAMSPACE` is optional. When set, it enables the cross-Teamspace scope-isolation case.
@@ -79,7 +79,7 @@ npm pack --dry-run
 
 Releases are executable npm tarballs hosted by GitHub Releases; this package is not published to the npm registry.
 
-1. Prepare and merge a release pull request that updates `package.json` and `package-lock.json` to the same version and records the release in `CHANGELOG.md`.
+1. Prepare and merge a release pull request that updates `package.json` and `package-lock.json` to the same version.
 2. On the exact release commit, run the complete release checks:
 
    ```sh

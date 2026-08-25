@@ -30,6 +30,7 @@ const GidResourceSchema = z.object({ gid: GidSchema });
 function testConfig(overrides: Partial<Config> = {}): Config {
   return {
     authentication: {
+      type: "oauth",
       clientId: "oauth-client-id",
       clientSecret: "oauth-client-secret",
       refreshToken: "oauth-refresh-token",
@@ -178,6 +179,26 @@ function superagentError(options: {
 }
 
 describe("AsanaRequestExecutor", () => {
+  it("uses a personal access token directly without an OAuth exchange", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const clientFactory = vi.fn(buildFakeApiClient);
+    const executor = new AsanaRequestExecutor(
+      testConfig({ authentication: { type: "pat", accessToken: "personal-access-token" } }),
+      testExecutorOptions({ fetch, clientFactory }),
+    );
+
+    await executor.read(GidResourceSchema, { deadlineMs: deadlineAfter(5_000) }, async () => ({
+      response: { headers: {} },
+      data: { data: { gid: "1" } },
+    }));
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(clientFactory).toHaveBeenCalledWith({
+      accessToken: "personal-access-token",
+      timeoutMs: 5_000,
+    });
+  });
+
   it("exchanges an OAuth refresh token and sends the resulting bearer token", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(
       async () =>
@@ -595,7 +616,11 @@ describe("AsanaRequestExecutor", () => {
   });
 
   it("redacts the configured access token and bearer patterns from upstream messages", async () => {
-    const executor = new AsanaRequestExecutor(testConfig(), testExecutorOptions());
+    const personalAccessToken = "personal-access-token";
+    const executor = new AsanaRequestExecutor(
+      testConfig({ authentication: { type: "pat", accessToken: personalAccessToken } }),
+      testExecutorOptions(),
+    );
 
     await expect(
       executor.read(GidResourceSchema, { deadlineMs: deadlineAfter(10_000) }, async () => {
@@ -604,7 +629,7 @@ describe("AsanaRequestExecutor", () => {
           body: {
             errors: [
               {
-                message: `Token ${ACCESS_TOKEN} and Bearer abc.def.ghi were rejected`,
+                message: `Token ${personalAccessToken} and Bearer abc.def.ghi were rejected`,
               },
             ],
           },
@@ -613,7 +638,7 @@ describe("AsanaRequestExecutor", () => {
     ).rejects.toSatisfy((error: unknown) => {
       expect(error).toBeInstanceOf(CommandError);
       const commandError = error as CommandError;
-      expect(commandError.message).not.toContain(ACCESS_TOKEN);
+      expect(commandError.message).not.toContain(personalAccessToken);
       expect(commandError.message).not.toContain("abc.def.ghi");
       expect(commandError.message).toContain("[REDACTED]");
       return true;

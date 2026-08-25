@@ -78,7 +78,7 @@ jobs:
           status=$?
           set -e
           if [[ $status -ne 1 ]]; then
-            echo "Expected doctor to reject the missing OAuth login, received exit $status" >&2
+            echo "Expected doctor to reject the missing Asana login, received exit $status" >&2
             echo "$output" >&2
             exit 1
           fi
@@ -86,7 +86,7 @@ jobs:
           const payload = JSON.parse(process.env.DOCTOR_OUTPUT);
           if (
             payload.error?.code !== "invalid_configuration" ||
-            payload.error?.message !== "Asana OAuth login is missing; run asana-command-mcp auth login"
+            payload.error?.message !== "Asana login is missing; run asana-command-mcp auth login"
           ) {
             throw new Error(`Unexpected doctor output: ${process.env.DOCTOR_OUTPUT}`);
           }
