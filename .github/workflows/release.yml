@@ -67,6 +67,14 @@ jobs:
           fi
           echo "archive=${PWD}/${archive}" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare stable installer assets
+        env:
+          ARCHIVE: ${{ steps.pack.outputs.archive }}
+        run: |
+          cp "$ARCHIVE" asana-command-mcp.tgz
+          sha256sum asana-command-mcp.tgz install.sh > SHA256SUMS
+          sha256sum --check SHA256SUMS
+
       - name: Verify packed executable through npx
         env:
           ARCHIVE: ${{ steps.pack.outputs.archive }}
@@ -92,8 +100,43 @@ jobs:
           }
           NODE
 
+      - name: Verify one-line installer
+        run: |
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+          HOME="$workdir/home" \
+            ASANA_COMMAND_MCP_RELEASE_BASE_URL="file://${PWD}" \
+            sh ./install.sh --no-config
+          executable="$workdir/home/.asana/mcp/bin/asana-command-mcp"
+          if [[ ! -x "$executable" ]]; then
+            echo "Installer did not create $executable" >&2
+            exit 1
+          fi
+          set +e
+          output="$("$executable" doctor 2>&1)"
+          status=$?
+          set -e
+          if [[ $status -ne 1 ]]; then
+            echo "Expected installed doctor to reject the missing Asana login, received exit $status" >&2
+            echo "$output" >&2
+            exit 1
+          fi
+          DOCTOR_OUTPUT="$output" node --input-type=module <<'NODE'
+          const payload = JSON.parse(process.env.DOCTOR_OUTPUT);
+          if (
+            payload.error?.code !== "invalid_configuration" ||
+            payload.error?.message !== "Asana login is missing; run asana-command-mcp auth login"
+          ) {
+            throw new Error(`Unexpected installed doctor output: ${process.env.DOCTOR_OUTPUT}`);
+          }
+          NODE
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.pack.outputs.archive }}
+          files: |
+            ${{ steps.pack.outputs.archive }}
+            asana-command-mcp.tgz
+            install.sh
+            SHA256SUMS
           generate_release_notes: true

@@ -1,0 +1,310 @@
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+const INSTALLER_PATH = resolve(import.meta.dirname, "../install.sh");
+const temporaryDirectories: string[] = [];
+
+type Client = "claude" | "codex" | "cursor" | "agent";
+type Downloader = "curl" | "wget";
+
+function temporaryDirectory(name: string): string {
+  const directory = mkdtempSync(join(tmpdir(), `${name}-`));
+  temporaryDirectories.push(directory);
+  return directory;
+}
+
+function commandPath(command: string): string {
+  const result = spawnSync("/bin/sh", ["-c", `command -v ${command}`], {
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    throw new Error(`Required test command is unavailable: ${command}`);
+  }
+  return result.stdout.trim();
+}
+
+function optionalCommandPath(command: string): string | null {
+  const result = spawnSync("/bin/sh", ["-c", `command -v ${command}`], {
+    encoding: "utf8",
+  });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+function writeExecutable(path: string, contents: string): void {
+  writeFileSync(path, contents);
+  chmodSync(path, 0o755);
+}
+
+function linkCommand(binDirectory: string, command: string, source = commandPath(command)): void {
+  symlinkSync(source, join(binDirectory, command));
+}
+
+function createArchive(assetDirectory: string, contents = "release-one"): void {
+  mkdirSync(assetDirectory, { recursive: true });
+  const archivePath = join(assetDirectory, "asana-command-mcp.tgz");
+  writeFileSync(archivePath, contents);
+  const digest = createHash("sha256").update(contents).digest("hex");
+  writeFileSync(join(assetDirectory, "SHA256SUMS"), `${digest}  asana-command-mcp.tgz\n`);
+}
+
+function createFakePath(options: {
+  root: string;
+  downloader?: Downloader;
+  clients?: Client[];
+  includeNpm?: boolean;
+}): string {
+  const binDirectory = join(options.root, "fake bin");
+  rmSync(binDirectory, { recursive: true, force: true });
+  mkdirSync(binDirectory, { recursive: true });
+
+  for (const command of ["awk", "cat", "chmod", "mkdir", "mktemp", "mv", "rm", "uname"]) {
+    linkCommand(binDirectory, command);
+  }
+  linkCommand(binDirectory, "node", process.execPath);
+  const sha256sum = optionalCommandPath("sha256sum");
+  if (sha256sum !== null) {
+    linkCommand(binDirectory, "sha256sum", sha256sum);
+  } else {
+    linkCommand(binDirectory, "shasum");
+  }
+
+  if (options.includeNpm !== false) {
+    writeExecutable(
+      join(binDirectory, "npm"),
+      `#!/bin/sh
+set -eu
+prefix=''
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--prefix" ]; then
+    shift
+    prefix="$1"
+  fi
+  shift
+done
+[ -n "$prefix" ]
+mkdir -p "$prefix/bin"
+cat >"$prefix/bin/asana-command-mcp" <<'EOF'
+#!/bin/sh
+if [ "\${1:-}" = "doctor" ]; then
+  printf '%s\\n' '{"error":{"code":"invalid_configuration","message":"Asana login is missing; run asana-command-mcp auth login"}}'
+  exit 1
+fi
+EOF
+chmod +x "$prefix/bin/asana-command-mcp"
+printf '%s\\n' "$prefix" >>"$TEST_LOG/npm"
+`,
+    );
+  }
+
+  const downloader = options.downloader ?? "curl";
+  const downloaderBody =
+    downloader === "curl"
+      ? `#!/bin/sh
+set -eu
+url=''
+output=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) shift; output="$1" ;;
+    -*) ;;
+    *) url="$1" ;;
+  esac
+  shift
+done
+cp "$ASSET_DIR/\${url##*/}" "$output"
+`
+      : `#!/bin/sh
+set -eu
+[ "$1" = "-qO" ]
+output="$2"
+url="$3"
+cp "$ASSET_DIR/\${url##*/}" "$output"
+`;
+  linkCommand(binDirectory, "cp");
+  writeExecutable(join(binDirectory, downloader), downloaderBody);
+
+  for (const client of options.clients ?? []) {
+    writeExecutable(
+      join(binDirectory, client),
+      `#!/bin/sh
+printf '%s' '${client}' >>"$TEST_LOG/clients"
+for argument in "$@"; do
+  printf ' <%s>' "$argument" >>"$TEST_LOG/clients"
+done
+printf '\\n' >>"$TEST_LOG/clients"
+`,
+    );
+  }
+
+  return binDirectory;
+}
+
+function runInstaller(options: {
+  root: string;
+  args?: string[];
+  downloader?: Downloader;
+  clients?: Client[];
+  includeNpm?: boolean;
+}) {
+  const home = join(options.root, "home with spaces");
+  const assets = join(options.root, "assets");
+  const log = join(options.root, "log");
+  mkdirSync(home, { recursive: true });
+  mkdirSync(log, { recursive: true });
+  if (!existsSync(join(assets, "asana-command-mcp.tgz"))) {
+    createArchive(assets);
+  }
+  const path = createFakePath({
+    root: options.root,
+    ...(options.downloader === undefined ? {} : { downloader: options.downloader }),
+    ...(options.clients === undefined ? {} : { clients: options.clients }),
+    ...(options.includeNpm === undefined ? {} : { includeNpm: options.includeNpm }),
+  });
+
+  const result = spawnSync("/bin/sh", [INSTALLER_PATH, ...(options.args ?? [])], {
+    cwd: options.root,
+    encoding: "utf8",
+    env: {
+      HOME: home,
+      PATH: path,
+      ASSET_DIR: assets,
+      TEST_LOG: log,
+      ASANA_COMMAND_MCP_RELEASE_BASE_URL: "https://release.invalid",
+    },
+  });
+  return { assets, home, log, result };
+}
+
+afterEach(() => {
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+describe("install.sh", () => {
+  it("installs, updates, and configures every detected client without damaging Cursor config", () => {
+    const root = temporaryDirectory("command-installer-all");
+    const home = join(root, "home with spaces");
+    mkdirSync(join(home, ".cursor"), { recursive: true });
+    writeFileSync(
+      join(home, ".cursor/mcp.json"),
+      `${JSON.stringify({ theme: "dark", mcpServers: { existing: { command: "existing" } } })}\n`,
+    );
+
+    const first = runInstaller({
+      root,
+      args: ["--all"],
+      clients: ["claude", "codex", "cursor"],
+    });
+
+    expect(first.result.status, first.result.stderr).toBe(0);
+    const executable = join(home, ".asana/mcp/bin/asana-command-mcp");
+    expect(existsSync(executable)).toBe(true);
+    expect(readFileSync(join(home, ".asana/mcp/asana-command-mcp.tgz"), "utf8")).toBe(
+      "release-one",
+    );
+    const cursorConfig = JSON.parse(readFileSync(join(home, ".cursor/mcp.json"), "utf8"));
+    expect(cursorConfig).toEqual({
+      theme: "dark",
+      mcpServers: {
+        existing: { command: "existing" },
+        "asana-command": {
+          type: "stdio",
+          command: executable,
+          args: [],
+        },
+      },
+    });
+
+    createArchive(first.assets, "release-two");
+    const second = runInstaller({
+      root,
+      args: ["--all"],
+      clients: ["claude", "codex", "cursor"],
+    });
+
+    expect(second.result.status, second.result.stderr).toBe(0);
+    expect(readFileSync(join(home, ".asana/mcp/asana-command-mcp.tgz"), "utf8")).toBe(
+      "release-two",
+    );
+    expect(readFileSync(join(first.log, "npm"), "utf8").trim().split("\n")).toHaveLength(2);
+    const clientCalls = readFileSync(join(first.log, "clients"), "utf8");
+    expect(clientCalls).toContain(
+      `claude <mcp> <add> <--transport> <stdio> <--scope> <user> <asana-command> <--> <${executable}>`,
+    );
+    expect(clientCalls).toContain(`codex <mcp> <add> <asana-command> <--> <${executable}>`);
+  });
+
+  it("uses wget and can install without configuring clients", () => {
+    const root = temporaryDirectory("command-installer-wget");
+    const { home, result } = runInstaller({
+      root,
+      args: ["--no-config"],
+      downloader: "wget",
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(existsSync(join(home, ".asana/mcp/bin/asana-command-mcp"))).toBe(true);
+    expect(result.stdout).toContain("No supported MCP client commands were detected");
+  });
+
+  it("configures all detected clients by default when non-interactive", () => {
+    const root = temporaryDirectory("command-installer-defaults");
+    const { log, result } = runInstaller({
+      root,
+      clients: ["claude", "codex", "agent"],
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    const clientCalls = readFileSync(join(log, "clients"), "utf8");
+    expect(clientCalls).toContain("claude <mcp> <add>");
+    expect(clientCalls).toContain("codex <mcp> <add>");
+    expect(result.stdout).toContain("Configured: Claude Code Codex Cursor");
+  });
+
+  it("rejects an archive whose checksum does not match", () => {
+    const root = temporaryDirectory("command-installer-checksum");
+    const assets = join(root, "assets");
+    createArchive(assets);
+    writeFileSync(join(assets, "asana-command-mcp.tgz"), "tampered");
+
+    const { home, result } = runInstaller({ root, args: ["--no-config"] });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("checksum verification failed");
+    expect(existsSync(join(home, ".asana/mcp/bin/asana-command-mcp"))).toBe(false);
+  });
+
+  it("fails before downloading when npm is unavailable", () => {
+    const root = temporaryDirectory("command-installer-no-npm");
+    const { result } = runInstaller({
+      root,
+      args: ["--no-config"],
+      includeNpm: false,
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("npm is required");
+  });
+
+  it("rejects an explicitly selected client that is not installed", () => {
+    const root = temporaryDirectory("command-installer-missing-client");
+    const { result } = runInstaller({ root, args: ["--claude"] });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Claude Code was selected");
+  });
+});
