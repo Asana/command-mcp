@@ -53,6 +53,12 @@ Use `--all` to require all three clients, or `--no-config` to install without ch
 configuration. Selecting a client whose command is not installed causes the installer to stop with
 an error.
 
+When replacing an existing `asana-command` client entry, the installer detects versioned `.tgz`
+packages referenced by the old configuration. If an old package is outside `~/.asana/mcp` and no
+supported client still references it, the installer offers to delete it. The safe default is to
+keep the file. Use `--delete-old-packages` or `--keep-old-packages` to make that choice
+non-interactively. The installer never deletes packages inside its managed installation directory.
+
 ## Manual installation
 
 To install without running the downloaded installer script:

@@ -145,6 +145,28 @@ for argument in "$@"; do
   printf ' <%s>' "$argument" >>"$TEST_LOG/clients"
 done
 printf '\\n' >>"$TEST_LOG/clients"
+if [ '${client}' = 'claude' ] && [ "\${1:-}" = 'mcp' ] && [ "\${2:-}" = 'remove' ]; then
+  rm -f "$HOME/.claude.json"
+fi
+if [ '${client}' = 'codex' ] && [ "\${1:-}" = 'mcp' ]; then
+  case "\${2:-}" in
+    get)
+      [ -f "$TEST_LOG/codex-config" ] || exit 1
+      cat "$TEST_LOG/codex-config"
+      ;;
+    remove)
+      rm -f "$TEST_LOG/codex-config"
+      ;;
+    add)
+      last_argument=''
+      for argument in "$@"; do
+        last_argument="$argument"
+      done
+      printf '{"transport":{"type":"stdio","command":"%s","args":[]}}\\n' "$last_argument" \
+        >"$TEST_LOG/codex-config"
+      ;;
+  esac
+fi
 `,
     );
   }
@@ -273,6 +295,128 @@ describe("install.sh", () => {
     expect(clientCalls).toContain("claude <mcp> <add>");
     expect(clientCalls).toContain("codex <mcp> <add>");
     expect(result.stdout).toContain("Configured: Claude Code Codex Cursor");
+  });
+
+  it("deletes unreferenced manual packages outside the scripted install path", () => {
+    const root = temporaryDirectory("command-installer-cleanup");
+    const home = join(root, "home with spaces");
+    const log = join(root, "log");
+    const downloads = join(root, "manual downloads");
+    mkdirSync(join(home, ".cursor"), { recursive: true });
+    mkdirSync(log, { recursive: true });
+    mkdirSync(downloads, { recursive: true });
+    const claudePackage = join(downloads, "asana-command-mcp-0.1.0.tgz");
+    const codexPackage = join(downloads, "asana-command-mcp-0.1.1.tgz");
+    const cursorPackage = join(downloads, "asana-command-mcp-0.1.2.tgz");
+    for (const packagePath of [claudePackage, codexPackage, cursorPackage]) {
+      writeFileSync(packagePath, "old release");
+    }
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({
+        mcpServers: {
+          "asana-command": {
+            command: "npx",
+            args: ["--yes", "--package", claudePackage, "asana-command-mcp"],
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(log, "codex-config"),
+      JSON.stringify({
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["--yes", "--package", codexPackage, "asana-command-mcp"],
+        },
+      }),
+    );
+    writeFileSync(
+      join(home, ".cursor/mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "asana-command": {
+            command: "npx",
+            args: ["--yes", "--package", cursorPackage, "asana-command-mcp"],
+          },
+        },
+      }),
+    );
+
+    const { result } = runInstaller({
+      root,
+      args: ["--all", "--delete-old-packages"],
+      clients: ["claude", "codex", "cursor"],
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(existsSync(claudePackage)).toBe(false);
+    expect(existsSync(codexPackage)).toBe(false);
+    expect(existsSync(cursorPackage)).toBe(false);
+    expect(result.stdout.match(/Deleted old package:/g)).toHaveLength(3);
+  });
+
+  it("keeps an old package while an unselected client still references it", () => {
+    const root = temporaryDirectory("command-installer-shared-package");
+    const home = join(root, "home with spaces");
+    const oldPackage = join(root, "asana-command-mcp-0.1.0.tgz");
+    mkdirSync(join(home, ".cursor"), { recursive: true });
+    writeFileSync(oldPackage, "old release");
+    const oldEntry = {
+      command: "npx",
+      args: ["--yes", "--package", oldPackage, "asana-command-mcp"],
+    };
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({ mcpServers: { "asana-command": oldEntry } }),
+    );
+    writeFileSync(
+      join(home, ".cursor/mcp.json"),
+      JSON.stringify({ mcpServers: { "asana-command": oldEntry } }),
+    );
+
+    const { result } = runInstaller({
+      root,
+      args: ["--claude", "--delete-old-packages"],
+      clients: ["claude", "cursor"],
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(existsSync(oldPackage)).toBe(true);
+    expect(result.stdout).not.toContain("Deleted old package:");
+  });
+
+  it("keeps old packages by default without a terminal and excludes the scripted archive", () => {
+    const root = temporaryDirectory("command-installer-keep-package");
+    const home = join(root, "home with spaces");
+    const oldPackage = join(root, "asana-command-mcp-0.1.0.tgz");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(oldPackage, "old release");
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({
+        mcpServers: {
+          "asana-command": {
+            command: "npx",
+            args: ["--package", oldPackage, "asana-command-mcp"],
+          },
+        },
+      }),
+    );
+
+    const { result } = runInstaller({
+      root,
+      args: ["--claude"],
+      clients: ["claude"],
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(existsSync(oldPackage)).toBe(true);
+    expect(result.stdout).toContain(`Kept old package: ${oldPackage}`);
+    expect(readFileSync(join(home, ".asana/mcp/asana-command-mcp.tgz"), "utf8")).toBe(
+      "release-one",
+    );
   });
 
   it("rejects an archive whose checksum does not match", () => {
