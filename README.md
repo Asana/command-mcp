@@ -24,11 +24,11 @@ The server runs on your machine over stdio. By default, it authenticates with an
 Run one of these commands:
 
 ```sh
-curl -fsSL https://github.com/AsanaPlayground/command-mcp/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/Asana/command-mcp/releases/latest/download/install.sh | sh
 ```
 
 ```sh
-wget -qO- https://github.com/AsanaPlayground/command-mcp/releases/latest/download/install.sh | sh
+wget -qO- https://github.com/Asana/command-mcp/releases/latest/download/install.sh | sh
 ```
 
 The installer:
@@ -45,7 +45,7 @@ The prompt defaults to configuring every detected client. For non-interactive us
 explicitly:
 
 ```sh
-curl -fsSL https://github.com/AsanaPlayground/command-mcp/releases/latest/download/install.sh \
+curl -fsSL https://github.com/Asana/command-mcp/releases/latest/download/install.sh \
   | sh -s -- --claude --codex --cursor
 ```
 
@@ -63,7 +63,7 @@ non-interactively. The installer never deletes packages inside its managed insta
 
 To install without running the downloaded installer script:
 
-1. Open the [latest GitHub release](https://github.com/AsanaPlayground/command-mcp/releases/latest).
+1. Open the [latest GitHub release](https://github.com/Asana/command-mcp/releases/latest).
 2. Download `asana-command-mcp.tgz` and `SHA256SUMS` into the same directory.
 3. Verify the archive checksum.
 

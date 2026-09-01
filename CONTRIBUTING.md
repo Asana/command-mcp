@@ -7,7 +7,7 @@ Thank you for contributing to the Asana Command MCP server.
 Install Node.js 22 or newer, clone the repository, and install the locked dependencies:
 
 ```sh
-git clone https://github.com/AsanaPlayground/command-mcp.git
+git clone https://github.com/Asana/command-mcp.git
 cd command-mcp
 npm ci
 ```

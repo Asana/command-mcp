@@ -5,7 +5,7 @@ set -eu
 SERVER_NAME="asana-command"
 ARCHIVE_NAME="asana-command-mcp.tgz"
 CHECKSUM_NAME="SHA256SUMS"
-DEFAULT_RELEASE_BASE_URL="https://github.com/AsanaPlayground/command-mcp/releases/latest/download"
+DEFAULT_RELEASE_BASE_URL="https://github.com/Asana/command-mcp/releases/latest/download"
 
 die() {
   printf 'Error: %s\n' "$*" >&2
