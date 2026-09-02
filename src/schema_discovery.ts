@@ -399,7 +399,8 @@ async function collectCustomTypes(
         options,
         async (resources) =>
           ensureHttpResult(
-            await resources.customTypes.getCustomTypesWithHttpInfo(teamspaceId, {
+            await resources.customTypes.getCustomTypesWithHttpInfo({
+              project: teamspaceId,
               limit: pageSize,
               ...(offset === undefined ? {} : { offset }),
               opt_fields: CUSTOM_TYPE_FIELDS,

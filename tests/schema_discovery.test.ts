@@ -116,7 +116,7 @@ function createFakeExecutor(state: FakeState): AsanaRequestExecutorPort {
           },
         },
         customTypes: {
-          getCustomTypesWithHttpInfo: async (_projectGid: string, opts?: { offset?: string }) => {
+          getCustomTypesWithHttpInfo: async (opts?: { project?: string; offset?: string }) => {
             const offset = opts?.offset ?? "0";
             if (offset !== "0") {
               return httpResult({ data: [], next_page: null });
