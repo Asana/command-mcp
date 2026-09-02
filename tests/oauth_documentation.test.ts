@@ -5,7 +5,8 @@ const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 
 describe("OAuth documentation", () => {
   it("presents PAT login first and keeps OAuth setup collapsible", () => {
-    expect(readme).toContain("## 2. Create a personal access token");
+    expect(readme).toContain("## Sign in to Asana");
+    expect(readme).toContain("Create and store a personal access token");
     expect(readme).toContain("<summary>Use OAuth instead</summary>");
     expect(readme).toContain("auth login --oauth");
   });
@@ -16,6 +17,6 @@ describe("OAuth documentation", () => {
   });
 
   it("requires the MCP client to restart after re-authentication", () => {
-    expect(readme).toContain("restart Claude Code or Codex");
+    expect(readme).toContain("restart the client");
   });
 });

@@ -15,11 +15,17 @@ describe("release workflow", () => {
     expect(workflow).toContain("npm pack --json");
   });
 
-  it("executes and uploads the packed tarball", () => {
+  it("executes and uploads the packed tarball and verified installer assets", () => {
     expect(workflow).toContain('npx --yes --package "$ARCHIVE" asana-command-mcp doctor');
     expect(workflow).not.toContain("ASANA_ACCESS_TOKEN");
     expect(workflow).toContain("Asana login is missing; run asana-command-mcp auth login");
+    expect(workflow).toContain("sha256sum --check SHA256SUMS");
+    expect(workflow).toContain("sh ./install.sh --no-config");
     expect(workflow).toContain("softprops/action-gh-release@");
-    expect(workflow).toContain("files: $" + "{{ steps.pack.outputs.archive }}");
+    expect(workflow).toContain("files: |");
+    expect(workflow).toContain("$" + "{{ steps.pack.outputs.archive }}");
+    expect(workflow).toContain("asana-command-mcp.tgz");
+    expect(workflow).toContain("install.sh");
+    expect(workflow).toContain("SHA256SUMS");
   });
 });

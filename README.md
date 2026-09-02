@@ -1,6 +1,6 @@
 # Asana Command MCP
 
-`@asana/command-mcp` is a local [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for working with Asana Command tickets from Claude Code or Codex.
+`@asana/command-mcp` is a local [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for working with Asana Command tickets from Claude Code, Codex, or Cursor.
 
 The server runs on your machine over stdio. By default, it authenticates with an Asana personal access token (PAT) stored in your operating system keychain. OAuth is also supported as a fallback.
 
@@ -14,42 +14,101 @@ The server runs on your machine over stdio. By default, it authenticates with an
 ## Requirements
 
 - Node.js 22 or newer
+- npm
+- macOS or Linux with `curl` or `wget`
 - An Asana account
-- Claude Code or Codex
+- Claude Code, Codex, or Cursor
 
-## 1. Download the package
+## Install or update
 
-Sign in to GitHub with an account that can access this private repository, then:
-
-1. Open the [latest GitHub release](https://github.com/AsanaPlayground/command-mcp/releases/latest).
-2. Download the `asana-command-mcp-<version>.tgz` file.
-3. Save it in a permanent location on your machine. Do not move or delete it after adding the MCP server.
-
-Set its absolute path in your terminal:
+Run one of these commands:
 
 ```sh
-export ASANA_COMMAND_MCP_PACKAGE="/absolute/path/to/asana-command-mcp-0.1.0.tgz"
+curl -fsSL https://github.com/Asana/command-mcp/releases/latest/download/install.sh | sh
 ```
 
-Use an absolute path. MCP clients do not reliably expand `~` in their configuration.
+```sh
+wget -qO- https://github.com/Asana/command-mcp/releases/latest/download/install.sh | sh
+```
 
-## 2. Create a personal access token
+The installer:
+
+- downloads the latest release and verifies its SHA-256 checksum;
+- installs it under `~/.asana/mcp`;
+- detects the `claude`, `codex`, `cursor`, and Cursor Agent (`agent`) commands;
+- offers to configure each detected client as a user-level stdio MCP server.
+
+Run the same command again to update the existing installation. The executable path remains
+`~/.asana/mcp/bin/asana-command-mcp`, so configured clients do not need a version-specific path.
+
+The prompt defaults to configuring every detected client. For non-interactive use, select clients
+explicitly:
+
+```sh
+curl -fsSL https://github.com/Asana/command-mcp/releases/latest/download/install.sh \
+  | sh -s -- --claude --codex --cursor
+```
+
+Use `--all` to require all three clients, or `--no-config` to install without changing client
+configuration. Selecting a client whose command is not installed causes the installer to stop with
+an error.
+
+When replacing an existing `asana-command` client entry, the installer detects versioned `.tgz`
+packages referenced by the old configuration. If an old package is outside `~/.asana/mcp` and no
+supported client still references it, the installer offers to delete it. The safe default is to
+keep the file. Use `--delete-old-packages` or `--keep-old-packages` to make that choice
+non-interactively. The installer never deletes packages inside its managed installation directory.
+
+## Manual installation
+
+To install without running the downloaded installer script:
+
+1. Open the [latest GitHub release](https://github.com/Asana/command-mcp/releases/latest).
+2. Download `asana-command-mcp.tgz` and `SHA256SUMS` into the same directory.
+3. Verify the archive checksum.
+
+   On Linux:
+
+   ```sh
+   sha256sum --check --ignore-missing SHA256SUMS
+   ```
+
+   On macOS:
+
+   ```sh
+   expected="$(awk '$2 == "asana-command-mcp.tgz" { print $1 }' SHA256SUMS)"
+   actual="$(shasum -a 256 asana-command-mcp.tgz | awk '{ print $1 }')"
+   test -n "$expected" && test "$actual" = "$expected"
+   ```
+
+4. Install the package into the stable user-level location:
+
+   ```sh
+   mkdir -p "$HOME/.asana/mcp"
+   npm install --global --prefix "$HOME/.asana/mcp" ./asana-command-mcp.tgz
+   cp ./asana-command-mcp.tgz "$HOME/.asana/mcp/asana-command-mcp.tgz"
+   ```
+
+The executable is now at `~/.asana/mcp/bin/asana-command-mcp`. Continue with
+[Sign in to Asana](#sign-in-to-asana), then use [Manual client configuration](#manual-client-configuration)
+for each MCP client you want to enable.
+
+## Sign in to Asana
+
+Create and store a personal access token:
 
 1. Open the [Asana developer console](https://app.asana.com/0/my-apps).
 2. Select **Create new token**.
 3. Name and create the token, then copy it immediately. Asana displays it only once.
-
-A PAT has the same Asana permissions as the user who created it. Treat it like a password.
-
-## 3. Save the personal access token
-
-Run the login command:
+4. Run:
 
 ```sh
-npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp auth login
+"$HOME/.asana/mcp/bin/asana-command-mcp" auth login
 ```
 
 Paste the PAT at the prompt and press Enter. The command stores it in your operating system keychain; it does not add the token to your shell environment or MCP configuration.
+
+A PAT has the same Asana permissions as the user who created it. Treat it like a password.
 
 <details>
 <summary>Use OAuth instead</summary>
@@ -69,7 +128,7 @@ export ASANA_OAUTH_CLIENT_SECRET="your-client-secret"
 Start OAuth login explicitly:
 
 ```sh
-npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp auth login --oauth
+"$HOME/.asana/mcp/bin/asana-command-mcp" auth login --oauth
 ```
 
 The command opens Asana in your browser. Authorize the application, copy the one-time code shown by Asana, and paste it into the terminal.
@@ -84,61 +143,69 @@ Keep the client secret private. Do not commit it or add it to an MCP configurati
 
 </details>
 
-## 4. Add the server to Claude Code
-
-```sh
-claude mcp add \
-  --transport stdio \
-  --scope user \
-  asana-command \
-  -- npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp
-```
-
-Confirm that it was added:
-
-```sh
-claude mcp get asana-command
-```
-
-Start Claude Code and ask it to list your Asana workspaces or inspect a Command Teamspace.
-
-Claude Code starts the local MCP server but does not perform the Asana login. Run `auth login` before adding or starting the server.
-
-See the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for MCP scope and removal options.
-
-## Add the server to Codex
-
-After completing the Asana login, add this entry to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.asana-command]
-command = "npx"
-args = ["--yes", "--package", "/absolute/path/to/asana-command-mcp-0.1.0.tgz", "asana-command-mcp"]
-```
-
-Confirm that it was added:
-
-```sh
-codex mcp list
-```
-
-See the [Codex MCP documentation](https://developers.openai.com/codex/mcp) for other configuration options.
-
 ## Check the connection
 
 Check the stored credentials and Asana access:
 
 ```sh
-npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp doctor
+"$HOME/.asana/mcp/bin/asana-command-mcp" doctor
 ```
 
 To also validate a Command Teamspace, pass its project GID or URL:
 
 ```sh
-npx --yes --package "$ASANA_COMMAND_MCP_PACKAGE" asana-command-mcp doctor "TEAMSPACE_ID_OR_URL"
+"$HOME/.asana/mcp/bin/asana-command-mcp" doctor "TEAMSPACE_ID_OR_URL"
 ```
 
-If authentication stops working, run `auth login` again for a PAT or `auth login --oauth` for OAuth, then restart Claude Code or Codex so it starts the MCP server with the new credentials.
+Restart configured clients after installation or login, then confirm the server:
+
+```sh
+claude mcp get asana-command
+codex mcp list
+```
+
+For Cursor, open **Settings → Tools & MCP** or inspect `~/.cursor/mcp.json`. The installer
+preserves unrelated entries in that file. If authentication stops working, run `auth login` again
+for a PAT or `auth login --oauth` for OAuth, then restart the client.
+
+## Manual client configuration
+
+The installer normally handles this step. To configure a client later, rerun it with the
+corresponding flag. The equivalent Claude Code and Codex commands are:
+
+```sh
+claude mcp add --transport stdio --scope user asana-command \
+  -- "$HOME/.asana/mcp/bin/asana-command-mcp"
+codex mcp add asana-command -- "$HOME/.asana/mcp/bin/asana-command-mcp"
+```
+
+For Cursor, add a user-level stdio entry to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "asana-command": {
+      "type": "stdio",
+      "command": "/absolute/path/to/.asana/mcp/bin/asana-command-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+MCP clients do not reliably expand `~` in configuration files; use an absolute path.
+
+## Uninstall
+
+Remove the `asana-command` MCP entry from each configured client, then remove the installation:
+
+```sh
+claude mcp remove asana-command --scope user
+codex mcp remove asana-command
+rm -rf "$HOME/.asana/mcp"
+```
+
+For Cursor, remove only the `asana-command` entry from `~/.cursor/mcp.json`.
 
 ## Configuration
 

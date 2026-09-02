@@ -7,7 +7,7 @@ Thank you for contributing to the Asana Command MCP server.
 Install Node.js 22 or newer, clone the repository, and install the locked dependencies:
 
 ```sh
-git clone https://github.com/AsanaPlayground/command-mcp.git
+git clone https://github.com/Asana/command-mcp.git
 cd command-mcp
 npm ci
 ```
@@ -36,6 +36,14 @@ npm run check
 Include the command's complete, unfiltered output in the pull-request description. Never pipe a verification command through `head`, `tail`, `grep`, or another output filter. Missing, truncated, timed-out, or unparseable output is unknown evidence, not a passing check.
 
 `npm run check` proves type checking, linting, non-integration tests, and the production build. It does not prove behavior against the live Asana API.
+
+Installer tests execute `install.sh` with an isolated home directory, local release fixtures, and
+fake client commands. They must not read or modify the developer's real Claude, Codex, or Cursor
+configuration. Also check the POSIX shell syntax directly when changing the installer:
+
+```sh
+sh -n install.sh
+```
 
 ## Live Asana integration suite
 
@@ -97,6 +105,12 @@ Releases are executable npm tarballs hosted by GitHub Releases; this package is 
    git push origin "v${version}"
    ```
 
-The tag-triggered release workflow independently checks the tag, repeats all release checks, creates `asana-command-mcp-<version>.tgz`, and executes that packed archive through `npx` from a temporary directory. Only then does it create the GitHub Release and attach the archive. A tag that does not exactly match `v<package.json version>` fails without publishing a release.
+   The tag-triggered release workflow independently checks the tag, repeats all release checks,
+   creates `asana-command-mcp-<version>.tgz`, and executes that packed archive through `npx` from a
+   temporary directory. It also creates the stable `asana-command-mcp.tgz` alias and `SHA256SUMS`,
+   verifies those checksums, and runs `install.sh` against the local release assets in an isolated
+   home directory. Only then does it create the GitHub Release and attach the versioned archive,
+   stable archive, installer, and checksums. A tag that does not exactly match
+   `v<package.json version>` fails without publishing a release.
 
 Do not move or reuse a published version tag. If a release needs a code or packaging correction, prepare a new version and tag.
