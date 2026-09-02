@@ -270,3 +270,7 @@ npm run check
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development and release validation. See [SECURITY.md](SECURITY.md) for security reporting and the credential trust model.
+
+## Third Party Dependencies
+
+See [NOTICES.md](NOTICES.md) for the licenses and copyright notices of bundled third-party dependencies.
