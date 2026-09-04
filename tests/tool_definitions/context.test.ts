@@ -137,6 +137,7 @@ describe("context tool definitions", () => {
     expect(output.shape.validation_warnings.description).toBe(
       "Schema limitations the caller must surface",
     );
+    expect(output.shape.update_available.description).toContain("latest published server version");
   });
 
   it("requires a URL on every find_teamspaces candidate", () => {
@@ -274,7 +275,7 @@ describe("context tool definitions", () => {
     const executor = createUnexpectedExecutorFake();
     const services: CommandServices = {
       executor,
-      context: createContextService(executor),
+      context: createContextService(executor, async () => null),
       releases: createUnexpectedReleaseServiceFake(),
       schemaDiscovery,
       comments: createUnexpectedCommentServiceFake(),
@@ -292,6 +293,7 @@ describe("context tool definitions", () => {
       ticket_prefix: snapshot.ticket_short_id_field.id_prefix,
       schema_fingerprint: snapshot.fingerprint,
       validation_warnings: snapshot.warnings,
+      update_available: null,
     });
     expect(discoveryCalls).toBe(1);
   });
