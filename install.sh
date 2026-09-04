@@ -92,6 +92,7 @@ esac
 [ "$node_major" -ge 22 ] || die "Node.js 22 or newer is required (found Node.js $node_major)"
 
 command -v npm >/dev/null 2>&1 || die "npm is required"
+command -v tar >/dev/null 2>&1 || die "tar is required"
 
 if command -v curl >/dev/null 2>&1; then
   download() {
@@ -120,6 +121,15 @@ fi
 install_dir="${ASANA_COMMAND_MCP_INSTALL_DIR:-"$HOME/.asana/mcp"}"
 release_base_url="${ASANA_COMMAND_MCP_RELEASE_BASE_URL:-"$DEFAULT_RELEASE_BASE_URL"}"
 executable="$install_dir/bin/asana-command-mcp"
+installed_package_json="$install_dir/lib/node_modules/@asana/command-mcp/package.json"
+
+package_version() {
+  node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version'
+}
+
+archive_version() {
+  tar -xzOf "$1" package/package.json | package_version
+}
 
 mkdir -p "$install_dir"
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/asana-command-mcp.XXXXXX")"
@@ -151,9 +161,25 @@ expected_checksum="$(
 actual_checksum="$(checksum "$archive_path")" || die "failed to checksum $ARCHIVE_NAME"
 [ "$actual_checksum" = "$expected_checksum" ] || die "checksum verification failed"
 
-info "Installing into $install_dir..."
-npm install --global --prefix "$install_dir" "$archive_path"
-[ -x "$executable" ] || die "installation completed without creating $executable"
+latest_version="$(archive_version "$archive_path")" ||
+  die "failed to read the release version from $ARCHIVE_NAME"
+current_version=''
+if [ -f "$installed_package_json" ]; then
+  current_version="$(package_version <"$installed_package_json" 2>/dev/null || true)"
+fi
+
+if [ -n "$current_version" ]; then
+  info "Installed version: $current_version"
+fi
+info "Latest release version: $latest_version"
+
+if [ "$current_version" = "$latest_version" ]; then
+  info "Already up to date; skipping reinstall."
+else
+  info "Installing into $install_dir..."
+  npm install --global --prefix "$install_dir" "$archive_path"
+  [ -x "$executable" ] || die "installation completed without creating $executable"
+fi
 mv "$archive_path" "$install_dir/$ARCHIVE_NAME"
 
 has_claude=false
