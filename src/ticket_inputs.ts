@@ -29,6 +29,14 @@ export const DateOnlySchema = z
 
 const NonEmptyNameSchema = z.string().trim().min(1, "Name must not be empty");
 
+export const RICH_TEXT_WRITER_RULES =
+  'Must be well-formed XML with a single root <body>...</body>. Only <a> may carry attributes (e.g. <a data-asana-gid="123"/> to @-mention an accessible object by GID); attributes on any other element are invalid. Elements outside the allowed list are rejected.';
+
+const TICKET_DESCRIPTION_HTML_DESCRIPTION = [
+  "HTML-formatted description; mutually exclusive with description. Use this for rich formatting or @-mentions.",
+  `Allowed elements: <body>, <strong>, <em>, <u>, <s>, <code>, <ol>, <ul>, <li>, <a>, <blockquote>, <pre>, <h1>, <h2>, <hr/>, <img>. ${RICH_TEXT_WRITER_RULES}`,
+].join(" ");
+
 export const AssigneeIdentifierSchema = z
   .string()
   .trim()
@@ -138,8 +146,11 @@ export const UpdateTicketFieldsSchema = z
     name: NonEmptyNameSchema.describe("The replacement ticket name").optional(),
     description: z
       .string()
-      .describe("The replacement plain-text description; an empty string clears it")
+      .describe(
+        "The replacement plain-text description; an empty string clears it. Markdown is not rendered; use description_html for rich formatting.",
+      )
       .optional(),
+    description_html: z.string().describe(TICKET_DESCRIPTION_HTML_DESCRIPTION).optional(),
     completed: z.boolean().describe("Whether the ticket is completed").optional(),
     type: NonEmptyNameSchema.describe("A Teamspace-local ticket type option name").optional(),
     labels: LabelUpdateSchema.optional(),
@@ -158,7 +169,13 @@ export const UpdateTicketFieldsSchema = z
 export const CreateTicketFieldsSchema = z
   .object({
     name: NonEmptyNameSchema.describe("The ticket name"),
-    description: z.string().describe("The initial plain-text description").optional(),
+    description: z
+      .string()
+      .describe(
+        "The initial plain-text description. Markdown is not rendered; use description_html for rich formatting.",
+      )
+      .optional(),
+    description_html: z.string().describe(TICKET_DESCRIPTION_HTML_DESCRIPTION).optional(),
     type: NonEmptyNameSchema.describe("A Teamspace-local ticket type option name").optional(),
     labels: LabelNamesSchema.describe("Initial Teamspace-local label option names").optional(),
     assignee: AssigneeIdentifierSchema.describe(

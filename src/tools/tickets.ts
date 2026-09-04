@@ -308,6 +308,7 @@ type UpdateCustomFieldValue = string | string[] | { date: string } | null;
 type UpdateTaskData = {
   name?: string;
   notes?: string;
+  html_notes?: string;
   completed?: boolean;
   assignee?: string | null;
   custom_fields?: Record<string, UpdateCustomFieldValue>;
@@ -408,6 +409,9 @@ function buildUpdateBody(
   if (fields.description !== undefined) {
     data.notes = fields.description;
   }
+  if (fields.description_html !== undefined) {
+    data.html_notes = fields.description_html;
+  }
   if (fields.completed !== undefined) {
     data.completed = fields.completed;
   }
@@ -464,6 +468,9 @@ function requestedCreateVerification(
   if (fields.description !== undefined) {
     requested.description = fields.description;
   }
+  if (fields.description_html !== undefined) {
+    requested.description_html = fields.description_html;
+  }
   if (fields.assignee !== undefined) {
     requested.assignee = fields.assignee;
   }
@@ -519,6 +526,7 @@ function labelMismatches(
 function mismatchedFields(
   requested: UpdateTicketFields,
   actual: TicketView,
+  actualTask: Task,
   snapshot: DiscoveryResult,
 ): string[] {
   const mismatches: string[] = [];
@@ -527,6 +535,12 @@ function mismatchedFields(
   }
   if (requested.description !== undefined && actual.description !== requested.description) {
     mismatches.push("description");
+  }
+  if (
+    requested.description_html !== undefined &&
+    actualTask.html_notes !== requested.description_html
+  ) {
+    mismatches.push("description_html");
   }
   if (requested.completed !== undefined && actual.completed !== requested.completed) {
     mismatches.push("completed");
@@ -608,6 +622,9 @@ function requireVerificationFields(
 ): void {
   if (requested.description !== undefined && task.notes === undefined) {
     throw domainError("schema_drift", "Asana task response omitted the description", trace);
+  }
+  if (requested.description_html !== undefined && task.html_notes === undefined) {
+    throw domainError("schema_drift", "Asana task response omitted the HTML description", trace);
   }
   if (requested.assignee !== undefined && task.assignee === undefined) {
     throw domainError("schema_drift", "Asana task response omitted the assignee", trace);
@@ -805,7 +822,7 @@ export function createTicketService(
     requireTicketIdentity(reread, snapshot, false, trace);
     requireVerificationFields(reread, fieldsToVerify, snapshot, trace);
     const view = projectForMutation(reread, snapshot, trace);
-    const mismatches = mismatchedFields(fieldsToVerify, view, snapshot);
+    const mismatches = mismatchedFields(fieldsToVerify, view, reread, snapshot);
     if (mismatches.length > 0) {
       throw verificationError(task.gid, mismatches, trace);
     }
@@ -881,7 +898,11 @@ export function createTicketService(
     const createData = {
       projects: [snapshot.teamspace.gid],
       name: fields.name,
-      ...(fields.description === undefined ? {} : { notes: fields.description }),
+      ...(fields.description_html === undefined
+        ? fields.description === undefined
+          ? {}
+          : { notes: fields.description }
+        : { html_notes: fields.description_html }),
       ...(fields.assignee === undefined ? {} : { assignee: fields.assignee }),
     };
     const created = await executor.write(

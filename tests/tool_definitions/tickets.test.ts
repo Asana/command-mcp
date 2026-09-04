@@ -421,6 +421,25 @@ describe("ticket tool definitions", () => {
     ).toBe(false);
   });
 
+  it("rejects description and description_html set together on create_ticket and update_ticket", () => {
+    expect(
+      findTool("create_ticket").inputSchema.safeParse({
+        teamspace_id: TEAMSPACE_ID,
+        name: "New ticket",
+        description: "Plain",
+        description_html: "<body>Rich</body>",
+      }).success,
+    ).toBe(false);
+    expect(
+      findTool("update_ticket").inputSchema.safeParse({
+        teamspace_id: TEAMSPACE_ID,
+        task_gid: TICKET_GID,
+        description: "Plain",
+        description_html: "<body>Rich</body>",
+      }).success,
+    ).toBe(false);
+  });
+
   it("executes create_ticket with one discovered snapshot and validates its succeeded variant", async () => {
     const state = createDiscoveryState();
     const snapshot = buildDiscoverySnapshot(TEAMSPACE_ID);

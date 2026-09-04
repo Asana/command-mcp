@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TeamspaceIdentifierSchema } from "../teamspace_identity.js";
-import { withTicketId } from "../ticket_inputs.js";
+import { RICH_TEXT_WRITER_RULES, withTicketId } from "../ticket_inputs.js";
 import { defineTeamspaceScopedTool } from "../tool_registry.js";
 import {
   AddCommentOutputSchema,
@@ -42,19 +42,45 @@ const getComments = defineTeamspaceScopedTool({
     ),
 });
 
+const COMMENT_TEXT_HTML_DESCRIPTION = [
+  "HTML-formatted comment; exactly one of text or text_html must be provided. Use this for rich formatting or @-mentions.",
+  `Allowed elements: <body>, <strong>, <em>, <u>, <s>, <code>, <ol>, <ul>, <li>, <a>, <blockquote>, <pre>. ${RICH_TEXT_WRITER_RULES}`,
+].join(" ");
+
 const AddCommentInputSchema = withTicketId({
   teamspace_id: TeamspaceIdentifierSchema,
   text: z
     .string()
     .trim()
     .min(1, "Comment text must not be empty")
-    .describe("Plain-text comment; Markdown is not rendered"),
-}).strict();
+    .describe(
+      "Plain-text comment; Markdown is not rendered; exactly one of text or text_html must be provided.",
+    )
+    .optional(),
+  text_html: z.string().describe(COMMENT_TEXT_HTML_DESCRIPTION).optional(),
+})
+  .strict()
+  .superRefine((value, context) => {
+    if (value.text !== undefined && value.text_html !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "text and text_html may not both be set",
+        path: ["text_html"],
+      });
+    }
+    if (value.text === undefined && value.text_html === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Exactly one of text or text_html must be provided",
+        path: ["text"],
+      });
+    }
+  });
 
 const addComment = defineTeamspaceScopedTool({
   name: "add_comment",
   title: "Add ticket comment",
-  description: "Add a plain-text comment to an in-scope ticket.",
+  description: "Add a comment, as plain text or HTML rich text, to an in-scope ticket.",
   input: AddCommentInputSchema,
   output: AddCommentOutputSchema,
   protocolOutput: AddCommentProtocolOutputSchema,
@@ -65,7 +91,8 @@ const addComment = defineTeamspaceScopedTool({
     context.services.comments.addComment(
       {
         ticketId: input.ticket_id,
-        text: input.text,
+        ...(input.text === undefined ? {} : { text: input.text }),
+        ...(input.text_html === undefined ? {} : { textHtml: input.text_html }),
       },
       context.schema,
       context.deadlineMs,

@@ -67,7 +67,7 @@ describe("comment tool definitions", () => {
     }).toEqual({
       name: "add_comment",
       title: "Add ticket comment",
-      description: "Add a plain-text comment to an in-scope ticket.",
+      description: "Add a comment, as plain text or HTML rich text, to an in-scope ticket.",
     });
     expect(addComment.annotations).toEqual({
       title: "Add ticket comment",
@@ -220,5 +220,80 @@ describe("comment tool definitions", () => {
       ),
     ).rejects.toMatchObject({ code: "invalid_input" });
     expect(state.discoverCalls).toBe(0);
+  });
+
+  it("requires exactly one of text or text_html", async () => {
+    const state = createDiscoveryState();
+    const context: CallContext = {
+      deadlineMs: DEADLINE_MS,
+      services: createTestContainer(state),
+    };
+
+    await expect(
+      onlyTool(commentWriteToolDefinitions).execute(
+        { teamspace_id: TEAMSPACE_ID, ticket_id: TICKET_GID },
+        context,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(
+      onlyTool(commentWriteToolDefinitions).execute(
+        {
+          teamspace_id: TEAMSPACE_ID,
+          ticket_id: TICKET_GID,
+          text: "Plain",
+          text_html: "<body>Rich</body>",
+        },
+        context,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    expect(state.discoverCalls).toBe(0);
+  });
+
+  it("executes add_comment with an HTML comment", async () => {
+    const state = createDiscoveryState();
+    const snapshot = state.snapshot;
+    const comments = commentsService({
+      addComment: async (input, discovered, deadlineMs) => {
+        expect(input).toEqual({
+          ticketId: TICKET_GID,
+          textHtml: "<body><strong>Bold</strong></body>",
+        });
+        expect(discovered).toBe(snapshot);
+        expect(deadlineMs).toBe(DEADLINE_MS);
+        return {
+          workspace: snapshot.workspace,
+          teamspace: snapshot.teamspace,
+          warnings: [],
+          asana_request_ids: ["create-request", "reread-request"],
+          status: "succeeded",
+          outcome: "comment_added",
+          data: {
+            story_gid: STORY_GID,
+            comment: {
+              gid: STORY_GID,
+              text: "Bold",
+              created_at: null,
+              author: null,
+            },
+          },
+        };
+      },
+    });
+    const context: CallContext = {
+      deadlineMs: DEADLINE_MS,
+      services: createTestContainer(state, { comments }),
+    };
+
+    const result = await onlyTool(commentWriteToolDefinitions).execute(
+      {
+        teamspace_id: TEAMSPACE_ID,
+        ticket_id: TICKET_GID,
+        text_html: "<body><strong>Bold</strong></body>",
+      },
+      context,
+    );
+
+    expect(state.discoverCalls).toBe(1);
+    expect(AddCommentOutputSchema.parse(result)).toEqual(result);
   });
 });
