@@ -236,25 +236,40 @@ describe("context service", () => {
     expect(result.truncated).toBe(false);
   });
 
-  it("projects every context field from the discovered snapshot without using Asana", () => {
+  it("projects every context field from the discovered snapshot without using Asana", async () => {
     const snapshot = buildDiscoverySnapshot(TEAMSPACE_GID);
     snapshot.warnings = ["Ticket type is unavailable"];
-    const service = createContextService(createUnexpectedExecutor());
+    const service = createContextService(createUnexpectedExecutor(), async () => null);
 
-    expect(service.getContext(snapshot)).toEqual({
+    await expect(service.getContext(snapshot)).resolves.toEqual({
       workspace: snapshot.workspace,
       teamspace: snapshot.teamspace,
       ticket_prefix: "ENG",
       schema_fingerprint: snapshot.fingerprint,
       validation_warnings: snapshot.warnings,
+      update_available: null,
     });
   });
 
-  it("projects a null prefix when discovery has no short-ID prefix", () => {
+  it("projects a null prefix when discovery has no short-ID prefix", async () => {
     const snapshot = buildDiscoverySnapshot(TEAMSPACE_GID);
     snapshot.ticket_short_id_field.id_prefix = null;
-    const service = createContextService(createUnexpectedExecutor());
+    const service = createContextService(createUnexpectedExecutor(), async () => null);
 
-    expect(service.getContext(snapshot).ticket_prefix).toBeNull();
+    await expect(service.getContext(snapshot)).resolves.toMatchObject({ ticket_prefix: null });
+  });
+
+  it("surfaces the latest version when the injected checker reports one", async () => {
+    const snapshot = buildDiscoverySnapshot(TEAMSPACE_GID);
+    let calls = 0;
+    const service = createContextService(createUnexpectedExecutor(), async () => {
+      calls += 1;
+      return "9.9.9";
+    });
+
+    await expect(service.getContext(snapshot)).resolves.toMatchObject({
+      update_available: "9.9.9",
+    });
+    expect(calls).toBe(1);
   });
 });
