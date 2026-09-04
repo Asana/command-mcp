@@ -84,6 +84,16 @@ describe("ticket mutation inputs", () => {
     expect(UpdateTicketFieldsSchema.safeParse({ due_on: "2026-08-10" }).success).toBe(false);
   });
 
+  it("accepts an HTML description on update and documents its allowed elements", () => {
+    expect(
+      UpdateTicketFieldsSchema.parse({ description_html: "<body><strong>Bold</strong></body>" }),
+    ).toEqual({ description_html: "<body><strong>Bold</strong></body>" });
+    expect(UpdateTicketFieldsSchema.shape.description_html.description).toContain(
+      "mutually exclusive with description",
+    );
+    expect(UpdateTicketFieldsSchema.shape.description.description).toContain("description_html");
+  });
+
   it("requires create names and never accepts completed", () => {
     expect(
       CreateTicketFieldsSchema.parse({
@@ -97,6 +107,15 @@ describe("ticket mutation inputs", () => {
     expect(
       CreateTicketFieldsSchema.safeParse({ name: "Ticket", due_on: "2026-08-10" }).success,
     ).toBe(false);
+  });
+
+  it("accepts an HTML description on create", () => {
+    expect(
+      CreateTicketFieldsSchema.parse({
+        name: "New ticket",
+        description_html: "<body><strong>Bold</strong></body>",
+      }),
+    ).toEqual({ name: "New ticket", description_html: "<body><strong>Bold</strong></body>" });
   });
 
   it("requires a canonical, resumable, non-empty pending update", () => {

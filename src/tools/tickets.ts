@@ -10,6 +10,7 @@ import {
 import type { AsanaRequestExecutorPort, AsanaRequestTrace } from "../asana_gateway.js";
 import { commandTicketUrl, tryParseAsanaAppUrl } from "../asana_url.js";
 import { CommandError } from "../errors.js";
+import { looksLikeMarkdown, markdownInPlainTextWarning } from "../markdown_heuristic.js";
 import {
   buildMutationResult,
   mutationVariant,
@@ -308,6 +309,7 @@ type UpdateCustomFieldValue = string | string[] | { date: string } | null;
 type UpdateTaskData = {
   name?: string;
   notes?: string;
+  html_notes?: string;
   completed?: boolean;
   assignee?: string | null;
   custom_fields?: Record<string, UpdateCustomFieldValue>;
@@ -408,6 +410,9 @@ function buildUpdateBody(
   if (fields.description !== undefined) {
     data.notes = fields.description;
   }
+  if (fields.description_html !== undefined) {
+    data.html_notes = fields.description_html;
+  }
   if (fields.completed !== undefined) {
     data.completed = fields.completed;
   }
@@ -464,6 +469,9 @@ function requestedCreateVerification(
   if (fields.description !== undefined) {
     requested.description = fields.description;
   }
+  if (fields.description_html !== undefined) {
+    requested.description_html = fields.description_html;
+  }
   if (fields.assignee !== undefined) {
     requested.assignee = fields.assignee;
   }
@@ -519,6 +527,7 @@ function labelMismatches(
 function mismatchedFields(
   requested: UpdateTicketFields,
   actual: TicketView,
+  actualTask: Task,
   snapshot: DiscoveryResult,
 ): string[] {
   const mismatches: string[] = [];
@@ -527,6 +536,12 @@ function mismatchedFields(
   }
   if (requested.description !== undefined && actual.description !== requested.description) {
     mismatches.push("description");
+  }
+  if (
+    requested.description_html !== undefined &&
+    actualTask.html_notes !== requested.description_html
+  ) {
+    mismatches.push("description_html");
   }
   if (requested.completed !== undefined && actual.completed !== requested.completed) {
     mismatches.push("completed");
@@ -609,6 +624,9 @@ function requireVerificationFields(
   if (requested.description !== undefined && task.notes === undefined) {
     throw domainError("schema_drift", "Asana task response omitted the description", trace);
   }
+  if (requested.description_html !== undefined && task.html_notes === undefined) {
+    throw domainError("schema_drift", "Asana task response omitted the HTML description", trace);
+  }
   if (requested.assignee !== undefined && task.assignee === undefined) {
     throw domainError("schema_drift", "Asana task response omitted the assignee", trace);
   }
@@ -690,6 +708,12 @@ function isTimeout(error: unknown): boolean {
     error instanceof CommandError &&
     (error.code === "request_timeout" || error.code === "tool_timeout")
   );
+}
+
+function descriptionMarkdownWarnings(description: string | undefined): string[] {
+  return description !== undefined && looksLikeMarkdown(description)
+    ? [markdownInPlainTextWarning("description", "description_html")]
+    : [];
 }
 
 function isInitializedTicket(task: Task, snapshot: DiscoveryResult): boolean {
@@ -805,7 +829,7 @@ export function createTicketService(
     requireTicketIdentity(reread, snapshot, false, trace);
     requireVerificationFields(reread, fieldsToVerify, snapshot, trace);
     const view = projectForMutation(reread, snapshot, trace);
-    const mismatches = mismatchedFields(fieldsToVerify, view, snapshot);
+    const mismatches = mismatchedFields(fieldsToVerify, view, reread, snapshot);
     if (mismatches.length > 0) {
       throw verificationError(task.gid, mismatches, trace);
     }
@@ -881,7 +905,11 @@ export function createTicketService(
     const createData = {
       projects: [snapshot.teamspace.gid],
       name: fields.name,
-      ...(fields.description === undefined ? {} : { notes: fields.description }),
+      ...(fields.description_html === undefined
+        ? fields.description === undefined
+          ? {}
+          : { notes: fields.description }
+        : { html_notes: fields.description_html }),
       ...(fields.assignee === undefined ? {} : { assignee: fields.assignee }),
     };
     const created = await executor.write(
@@ -900,6 +928,7 @@ export function createTicketService(
     const deferred = requestedCreateUpdates(fields);
     const verification = requestedCreateVerification(fields, deferred);
     const pending = () => pendingInitialization(snapshot, created.gid, verification);
+    const markdownWarnings = descriptionMarkdownWarnings(fields.description);
     const initialized = await pollForInitialization(created.gid, snapshot, deadlineMs, trace);
     if (initialized === null) {
       return buildMutationResult(
@@ -907,7 +936,7 @@ export function createTicketService(
         pending(),
         trace.requestIds,
         discoveryToProvenance(snapshot),
-        [...snapshot.warnings, CREATE_PENDING_WARNING],
+        [...snapshot.warnings, CREATE_PENDING_WARNING, ...markdownWarnings],
       );
     }
 
@@ -925,7 +954,7 @@ export function createTicketService(
         { ticket },
         trace.requestIds,
         discoveryToProvenance(snapshot),
-        snapshot.warnings,
+        [...snapshot.warnings, ...markdownWarnings],
       );
     } catch (error) {
       if (!isTimeout(error)) {
@@ -936,7 +965,7 @@ export function createTicketService(
         pending(),
         trace.requestIds,
         discoveryToProvenance(snapshot),
-        [...snapshot.warnings, CREATE_PENDING_WARNING],
+        [...snapshot.warnings, CREATE_PENDING_WARNING, ...markdownWarnings],
       );
     }
   }
@@ -951,6 +980,7 @@ export function createTicketService(
       throw new CommandError("invalid_input", "At least one ticket field must be updated");
     }
     const trace = executor.createTrace();
+    const markdownWarnings = descriptionMarkdownWarnings(fields.description);
     const task = await resolve(identifier, snapshot, deadlineMs, {
       allowMissingCustomType: true,
       trace,
@@ -961,7 +991,7 @@ export function createTicketService(
         pendingInitialization(snapshot, task.gid, fields),
         trace.requestIds,
         discoveryToProvenance(snapshot),
-        [...snapshot.warnings, UPDATE_PENDING_WARNING],
+        [...snapshot.warnings, UPDATE_PENDING_WARNING, ...markdownWarnings],
       );
     }
 
@@ -971,7 +1001,7 @@ export function createTicketService(
       { ticket },
       trace.requestIds,
       discoveryToProvenance(snapshot),
-      snapshot.warnings,
+      [...snapshot.warnings, ...markdownWarnings],
     );
   }
 

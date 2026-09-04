@@ -36,6 +36,7 @@ const URGENT_GID = "1900000000000013";
 const VERIFICATION_MISMATCH_CASES: Array<[string, UpdateTicketFields]> = [
   ["name", { name: "Changed" }],
   ["description", { description: "Changed" }],
+  ["description_html", { description_html: "<body>Changed</body>" }],
   ["completed", { completed: true }],
   ["type", { type: "feature" }],
   ["labels", { labels: { add: ["Urgent"] } }],
@@ -160,6 +161,7 @@ function ticket(
     completed_at: null,
     resource_subtype: "custom",
     notes: "",
+    html_notes: "",
     assignee: null,
     projects: [{ gid: discovered.teamspace.gid, name: discovered.teamspace.name }],
     dependencies: [],
@@ -331,6 +333,98 @@ describe("create ticket mutation", () => {
       data: { ticket: { gid: TASK_GID, type: "Feature", labels: ["Customer"] } },
       asana_request_ids: ["create-request", "update-request"],
     });
+  });
+
+  it("creates a ticket with an HTML description sent as html_notes", async () => {
+    const discovered = snapshot();
+    const observed = state();
+    const createBodies: unknown[] = [];
+    const reads = [
+      ticket(discovered),
+      ticket(discovered, { html_notes: "<body><strong>Bold</strong></body>" }),
+    ];
+    const service = createTicketService(
+      executor(
+        resources({
+          createTask: async (body) => {
+            createBodies.push(body);
+            return result({ gid: TASK_GID }, "create-request");
+          },
+          updateTask: async () => result({ gid: TASK_GID }, "update-request"),
+          getTask: async () => result(reads.shift() ?? unexpectedCall("extra task read")),
+        }),
+        observed,
+      ),
+      { clock: () => 1_000 },
+    );
+
+    const mutation = await service.createTicket(
+      { name: "New ticket", description_html: "<body><strong>Bold</strong></body>" },
+      discovered,
+      DEADLINE_MS,
+    );
+
+    expect(createBodies).toEqual([
+      {
+        data: {
+          projects: [discovered.teamspace.gid],
+          name: "New ticket",
+          html_notes: "<body><strong>Bold</strong></body>",
+        },
+      },
+    ]);
+    expect(mutation).toMatchObject({ status: "succeeded", outcome: "created" });
+  });
+
+  it("warns when a plain-text description looks like Markdown, but not for description_html", async () => {
+    const discovered = snapshot();
+    const observed = state();
+    const markdownReads = [ticket(discovered), ticket(discovered, { notes: "**bold**" })];
+    const markdownService = createTicketService(
+      executor(
+        resources({
+          createTask: async () => result({ gid: TASK_GID }, "create-request"),
+          updateTask: async () => result({ gid: TASK_GID }, "update-request"),
+          getTask: async () => result(markdownReads.shift() ?? unexpectedCall("extra task read")),
+        }),
+        observed,
+      ),
+      { clock: () => 1_000 },
+    );
+
+    const markdownMutation = await markdownService.createTicket(
+      { name: "New ticket", description: "**bold**" },
+      discovered,
+      DEADLINE_MS,
+    );
+    expect(
+      markdownMutation.warnings.some((warning: string) => warning.includes("description_html")),
+    ).toBe(true);
+
+    const htmlReads = [
+      ticket(discovered),
+      ticket(discovered, { html_notes: "<body><strong>Bold</strong></body>" }),
+    ];
+    const htmlService = createTicketService(
+      executor(
+        resources({
+          createTask: async () => result({ gid: TASK_GID }, "create-request"),
+          updateTask: async () => result({ gid: TASK_GID }, "update-request"),
+          getTask: async () => result(htmlReads.shift() ?? unexpectedCall("extra task read")),
+        }),
+        observed,
+      ),
+      { clock: () => 1_000 },
+    );
+
+    const htmlMutation = await htmlService.createTicket(
+      { name: "New ticket", description_html: "<body><strong>Bold</strong></body>" },
+      discovered,
+      DEADLINE_MS,
+    );
+    expect(
+      htmlMutation.warnings.some((warning: string) => warning.includes("description_html")),
+    ).toBe(false);
   });
 
   it("returns a valid resumable payload when initialization exhausts the bounded budget", async () => {
@@ -773,6 +867,65 @@ describe("update ticket mutation", () => {
         DEADLINE_MS,
       ),
     ).resolves.toMatchObject({ status: "succeeded" });
+  });
+
+  it("writes and verifies an HTML description via html_notes", async () => {
+    const discovered = snapshot();
+    const observed = state();
+    const writes: unknown[] = [];
+    const reads = [
+      ticket(discovered),
+      ticket(discovered, { html_notes: "<body><strong>Bold</strong></body>" }),
+    ];
+    const service = createTicketService(
+      executor(
+        resources({
+          getTask: async () => result(reads.shift() ?? unexpectedCall("extra task read")),
+          updateTask: async (body) => {
+            writes.push(body);
+            return result({ gid: TASK_GID });
+          },
+        }),
+        observed,
+      ),
+    );
+
+    await expect(
+      service.updateTicket(
+        TASK_GID,
+        { description_html: "<body><strong>Bold</strong></body>" },
+        discovered,
+        DEADLINE_MS,
+      ),
+    ).resolves.toMatchObject({ status: "succeeded" });
+
+    expect(writes).toEqual([{ data: { html_notes: "<body><strong>Bold</strong></body>" } }]);
+  });
+
+  it("warns on update when the plain-text description looks like Markdown", async () => {
+    const discovered = snapshot();
+    const observed = state();
+    const reads = [ticket(discovered), ticket(discovered, { notes: "# Heading" })];
+    const service = createTicketService(
+      executor(
+        resources({
+          getTask: async () => result(reads.shift() ?? unexpectedCall("extra task read")),
+          updateTask: async () => result({ gid: TASK_GID }),
+        }),
+        observed,
+      ),
+    );
+
+    const mutation = await service.updateTicket(
+      TASK_GID,
+      { description: "# Heading" },
+      discovered,
+      DEADLINE_MS,
+    );
+
+    expect(mutation.warnings.some((warning: string) => warning.includes("description_html"))).toBe(
+      true,
+    );
   });
 
   it("fails verification when a removed label remains present", async () => {

@@ -89,6 +89,9 @@ const getTicketPullRequests = defineTeamspaceScopedTool({
 
 const CreateTicketInputSchema = CreateTicketFieldsSchema.extend({
   teamspace_id: TeamspaceIdentifierSchema,
+}).refine((input) => !(input.description !== undefined && input.description_html !== undefined), {
+  message: "description and description_html may not both be set",
+  path: ["description_html"],
 });
 
 const createTicket = defineTeamspaceScopedTool({
@@ -121,7 +124,10 @@ export const UpdateTicketRuntimeInputSchema = UpdateTicketProtocolInputSchema.re
   {
     message: "At least one ticket field must be updated",
   },
-);
+).refine((input) => !(input.description !== undefined && input.description_html !== undefined), {
+  message: "description and description_html may not both be set",
+  path: ["description_html"],
+});
 
 const updateTicket = defineTeamspaceScopedTool({
   name: "update_ticket",

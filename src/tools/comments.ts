@@ -6,6 +6,7 @@ import type {
   AsanaRequestTrace,
 } from "../asana_gateway.js";
 import { CommandError } from "../errors.js";
+import { looksLikeMarkdown, markdownInPlainTextWarning } from "../markdown_heuristic.js";
 import {
   buildMutationResult,
   mutationVariant,
@@ -79,7 +80,8 @@ export type GetCommentsInput = {
 
 export type AddCommentInput = {
   readonly ticketId: string;
-  readonly text: string;
+  readonly text?: string;
+  readonly textHtml?: string;
 };
 
 export type CommentService = {
@@ -153,12 +155,12 @@ function projectComment(story: Story, trace: AsanaRequestTrace): CommentView {
 
 function verificationError(
   storyGid: string,
-  mismatch: "resource_subtype" | "text",
+  mismatch: "resource_subtype" | "text" | "html_text",
   expected: string,
   actual: string | undefined,
   trace: AsanaRequestTrace,
 ): CommandError {
-  const mismatchName = mismatch === "resource_subtype" ? "resource subtype" : "text";
+  const mismatchName = mismatch === "resource_subtype" ? "resource subtype" : mismatch;
   return new CommandError(
     "asana_api_error",
     `Asana comment verification failed: ${mismatchName} mismatch`,
@@ -250,7 +252,10 @@ export function createCommentService(
       { deadlineMs },
       async (resources) =>
         resources.stories.createStoryForTaskWithHttpInfo(
-          { data: { text: input.text } },
+          {
+            data:
+              input.textHtml === undefined ? { text: input.text } : { html_text: input.textHtml },
+          },
           ticket.gid,
           { opt_fields: "gid" },
         ),
@@ -275,17 +280,25 @@ export function createCommentService(
         trace,
       );
     }
-    if (reread.text !== input.text) {
-      throw verificationError(created.gid, "text", input.text, reread.text, trace);
+    if (input.textHtml === undefined) {
+      if (reread.text !== input.text) {
+        throw verificationError(created.gid, "text", input.text ?? "", reread.text, trace);
+      }
+    } else if (reread.html_text !== input.textHtml) {
+      throw verificationError(created.gid, "html_text", input.textHtml, reread.html_text, trace);
     }
 
     const comment = projectComment(reread, trace);
+    const markdownWarnings =
+      input.text !== undefined && looksLikeMarkdown(input.text)
+        ? [markdownInPlainTextWarning("text", "text_html")]
+        : [];
     return buildMutationResult(
       AddCommentSucceededVariant,
       { story_gid: created.gid, comment },
       trace.requestIds,
       discoveryToProvenance(snapshot),
-      snapshot.warnings,
+      [...snapshot.warnings, ...markdownWarnings],
     );
   }
 

@@ -241,7 +241,7 @@ The descriptions below are the exact strings advertised through MCP tool discove
 | `update_ticket` | Write | Update one in-scope ticket and return a canonical post-write read. |
 | `add_dependency` | Write | Make ticket depend on dependency (dependency blocks ticket), then return ticket's current dependency list. |
 | `remove_dependency` | Write | Stop ticket from depending on dependency, then return ticket's current dependency list. |
-| `add_comment` | Write | Add a plain-text comment to an in-scope ticket. |
+| `add_comment` | Write | Add a comment, as plain text or HTML rich text, to an in-scope ticket. |
 | `add_ticket_to_release` | Write | Multi-home a ticket into a currently referenced Teamspace Release. |
 | `remove_ticket_from_release` | Write | Remove a ticket from a currently referenced Teamspace Release. |
 
