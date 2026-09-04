@@ -217,6 +217,7 @@ describe("CLI", () => {
       requestContext: { deadlineMs: 8_000_000 },
       stdout: createWriter(stdout),
       stderr: createWriter(stderr),
+      checkForUpdate: async () => null,
     });
 
     expect(stderr).toEqual([]);
@@ -237,6 +238,7 @@ describe("CLI", () => {
       oauthCredentialStore: createOAuthCredentialStore(),
       services: createDoctorServices(),
       stdout: createWriter(stdout),
+      checkForUpdate: async () => null,
     });
 
     expect(JSON.parse(stdout[0] ?? "")).toMatchObject({

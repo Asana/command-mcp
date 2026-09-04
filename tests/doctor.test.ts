@@ -31,7 +31,11 @@ function createDoctorServices() {
 describe("doctor", () => {
   it("reports successful authentication and accessible workspaces", async () => {
     const { services, state } = createDoctorServices();
-    const result = await runDoctor([], CONFIG, { services, deadlineMs: 8_000_000 });
+    const result = await runDoctor([], CONFIG, {
+      services,
+      deadlineMs: 8_000_000,
+      checkForUpdate: async () => null,
+    });
 
     expect(result).toEqual({
       status: "passed",
@@ -39,6 +43,7 @@ describe("doctor", () => {
         status: "passed",
         workspaces: WORKSPACES,
       },
+      update_available: null,
     });
     expect(state.discoverCalls).toBe(0);
   });
@@ -53,6 +58,7 @@ describe("doctor", () => {
     const result = await runDoctor([TEAMSPACE_ID], CONFIG, {
       services,
       deadlineMs: 8_000_000,
+      checkForUpdate: async () => null,
     });
 
     expect(result).toEqual({
@@ -71,16 +77,33 @@ describe("doctor", () => {
       asana_custom_types_opt_in: {
         status: "passed",
       },
+      update_available: null,
     });
     expect(state.discoverCalls).toBe(1);
     expect(state.lastTeamspaceId).toBe(TEAMSPACE_ID);
     expect(state.lastDeadlineMs).toBe(8_000_000);
   });
 
+  it("surfaces a newer version reported by the update checker", async () => {
+    const { services } = createDoctorServices();
+
+    const result = await runDoctor([], CONFIG, {
+      services,
+      deadlineMs: 8_000_000,
+      checkForUpdate: async () => "9.9.9",
+    });
+
+    expect(result.update_available).toBe("9.9.9");
+  });
+
   it("accepts and canonicalizes a Teamspace URL", async () => {
     const { services, state } = createDoctorServices();
 
-    await runDoctor([TEAMSPACE_URL], CONFIG, { services, deadlineMs: 8_000_000 });
+    await runDoctor([TEAMSPACE_URL], CONFIG, {
+      services,
+      deadlineMs: 8_000_000,
+      checkForUpdate: async () => null,
+    });
 
     expect(state.lastTeamspaceId).toBe(TEAMSPACE_ID);
   });
@@ -115,7 +138,9 @@ describe("doctor", () => {
       throw new CommandError("required_api_change_unavailable", "Custom types API is unavailable");
     };
 
-    await expect(runDoctor([TEAMSPACE_ID], CONFIG, { services })).rejects.toMatchObject({
+    await expect(
+      runDoctor([TEAMSPACE_ID], CONFIG, { services, checkForUpdate: async () => null }),
+    ).rejects.toMatchObject({
       code: "required_api_change_unavailable",
       details: { stage: "teamspace_schema_and_custom_types_opt_in" },
     });
