@@ -92,7 +92,18 @@ function createFakePath(options: {
   rmSync(binDirectory, { recursive: true, force: true });
   mkdirSync(binDirectory, { recursive: true });
 
-  for (const command of ["awk", "cat", "chmod", "mkdir", "mktemp", "mv", "rm", "tar", "uname"]) {
+  for (const command of [
+    "awk",
+    "cat",
+    "chmod",
+    "gzip",
+    "mkdir",
+    "mktemp",
+    "mv",
+    "rm",
+    "tar",
+    "uname",
+  ]) {
     linkCommand(binDirectory, command);
   }
   linkCommand(binDirectory, "node", process.execPath);
