@@ -6,6 +6,7 @@ import type {
   AsanaRequestTrace,
 } from "../asana_gateway.js";
 import { CommandError } from "../errors.js";
+import { looksLikeMarkdown, markdownInPlainTextWarning } from "../markdown_heuristic.js";
 import {
   buildMutationResult,
   mutationVariant,
@@ -288,12 +289,16 @@ export function createCommentService(
     }
 
     const comment = projectComment(reread, trace);
+    const markdownWarnings =
+      input.text !== undefined && looksLikeMarkdown(input.text)
+        ? [markdownInPlainTextWarning("text", "text_html")]
+        : [];
     return buildMutationResult(
       AddCommentSucceededVariant,
       { story_gid: created.gid, comment },
       trace.requestIds,
       discoveryToProvenance(snapshot),
-      snapshot.warnings,
+      [...snapshot.warnings, ...markdownWarnings],
     );
   }
 

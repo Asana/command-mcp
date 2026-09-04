@@ -10,6 +10,7 @@ import {
 import type { AsanaRequestExecutorPort, AsanaRequestTrace } from "../asana_gateway.js";
 import { commandTicketUrl, tryParseAsanaAppUrl } from "../asana_url.js";
 import { CommandError } from "../errors.js";
+import { looksLikeMarkdown, markdownInPlainTextWarning } from "../markdown_heuristic.js";
 import {
   buildMutationResult,
   mutationVariant,
@@ -709,6 +710,12 @@ function isTimeout(error: unknown): boolean {
   );
 }
 
+function descriptionMarkdownWarnings(description: string | undefined): string[] {
+  return description !== undefined && looksLikeMarkdown(description)
+    ? [markdownInPlainTextWarning("description", "description_html")]
+    : [];
+}
+
 function isInitializedTicket(task: Task, snapshot: DiscoveryResult): boolean {
   return (
     task.resource_subtype === "custom" && task.custom_type?.gid === snapshot.ticket_custom_type.gid
@@ -921,6 +928,7 @@ export function createTicketService(
     const deferred = requestedCreateUpdates(fields);
     const verification = requestedCreateVerification(fields, deferred);
     const pending = () => pendingInitialization(snapshot, created.gid, verification);
+    const markdownWarnings = descriptionMarkdownWarnings(fields.description);
     const initialized = await pollForInitialization(created.gid, snapshot, deadlineMs, trace);
     if (initialized === null) {
       return buildMutationResult(
@@ -928,7 +936,7 @@ export function createTicketService(
         pending(),
         trace.requestIds,
         discoveryToProvenance(snapshot),
-        [...snapshot.warnings, CREATE_PENDING_WARNING],
+        [...snapshot.warnings, CREATE_PENDING_WARNING, ...markdownWarnings],
       );
     }
 
@@ -946,7 +954,7 @@ export function createTicketService(
         { ticket },
         trace.requestIds,
         discoveryToProvenance(snapshot),
-        snapshot.warnings,
+        [...snapshot.warnings, ...markdownWarnings],
       );
     } catch (error) {
       if (!isTimeout(error)) {
@@ -957,7 +965,7 @@ export function createTicketService(
         pending(),
         trace.requestIds,
         discoveryToProvenance(snapshot),
-        [...snapshot.warnings, CREATE_PENDING_WARNING],
+        [...snapshot.warnings, CREATE_PENDING_WARNING, ...markdownWarnings],
       );
     }
   }
@@ -972,6 +980,7 @@ export function createTicketService(
       throw new CommandError("invalid_input", "At least one ticket field must be updated");
     }
     const trace = executor.createTrace();
+    const markdownWarnings = descriptionMarkdownWarnings(fields.description);
     const task = await resolve(identifier, snapshot, deadlineMs, {
       allowMissingCustomType: true,
       trace,
@@ -982,7 +991,7 @@ export function createTicketService(
         pendingInitialization(snapshot, task.gid, fields),
         trace.requestIds,
         discoveryToProvenance(snapshot),
-        [...snapshot.warnings, UPDATE_PENDING_WARNING],
+        [...snapshot.warnings, UPDATE_PENDING_WARNING, ...markdownWarnings],
       );
     }
 
@@ -992,7 +1001,7 @@ export function createTicketService(
       { ticket },
       trace.requestIds,
       discoveryToProvenance(snapshot),
-      snapshot.warnings,
+      [...snapshot.warnings, ...markdownWarnings],
     );
   }
 

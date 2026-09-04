@@ -462,6 +462,45 @@ describe("add comment", () => {
     expect(CommentViewSchema.parse(result.data.comment)).toEqual(result.data.comment);
   });
 
+  it("warns when a plain-text comment looks like Markdown, but not for text_html", async () => {
+    const createStory: StoriesApi["createStoryForTaskWithHttpInfo"] = async () =>
+      singleResult({ gid: STORY_GID }, "create-request");
+    const getStory: StoriesApi["getStoryWithHttpInfo"] = async () =>
+      singleResult(story(STORY_GID, { text: "**bold**" }), "reread-request");
+    const service = createCommentService(
+      executor(resources({ createStory, getStory }), executorState()),
+      ticketService(),
+    );
+
+    const markdownResult = await service.addComment(
+      { ticketId: TICKET_GID, text: "**bold**" },
+      snapshot(),
+      DEADLINE_MS,
+    );
+    expect(markdownResult.warnings.some((warning: string) => warning.includes("text_html"))).toBe(
+      true,
+    );
+
+    const htmlGetStory: StoriesApi["getStoryWithHttpInfo"] = async () =>
+      singleResult(
+        story(STORY_GID, { text: "Bold", html_text: "<body><strong>Bold</strong></body>" }),
+        "reread-request",
+      );
+    const htmlService = createCommentService(
+      executor(resources({ createStory, getStory: htmlGetStory }), executorState()),
+      ticketService(),
+    );
+
+    const htmlResult = await htmlService.addComment(
+      { ticketId: TICKET_GID, textHtml: "<body><strong>Bold</strong></body>" },
+      snapshot(),
+      DEADLINE_MS,
+    );
+    expect(htmlResult.warnings.some((warning: string) => warning.includes("text_html"))).toBe(
+      false,
+    );
+  });
+
   it("creates an HTML comment and verifies its html_text", async () => {
     const createStory: StoriesApi["createStoryForTaskWithHttpInfo"] = async (
       body,
