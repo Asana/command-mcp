@@ -16,6 +16,7 @@ import { CommandError } from "../errors.js";
 import { collectPages } from "../pagination/scanner.js";
 import type { DiscoveryResult } from "../schema_discovery.js";
 import { TeamspaceReferenceSchema } from "../teamspace_identity.js";
+import { createGitHubUpdateChecker, type UpdateChecker } from "../update_check.js";
 
 export const WorkspaceListSchema = z.object({
   workspaces: z.array(WorkspaceSchema),
@@ -37,6 +38,12 @@ export const ContextProjectionSchema = z.object({
   ticket_prefix: z.string().nullable().describe("The short-ID prefix or null when unavailable"),
   schema_fingerprint: z.string().describe("The fingerprint of the freshly discovered schema"),
   validation_warnings: z.array(z.string()).describe("Schema limitations the caller must surface"),
+  update_available: z
+    .string()
+    .nullable()
+    .describe(
+      "The latest published server version when newer than the running version; null when already current or the check could not complete. Tell the user to run the installer again when set.",
+    ),
 });
 
 export type WorkspaceList = z.infer<typeof WorkspaceListSchema>;
@@ -53,7 +60,7 @@ export type FindTeamspacesInput = {
 export type ContextService = {
   listWorkspaces(deadlineMs: number): Promise<WorkspaceList>;
   findTeamspaces(input: FindTeamspacesInput): Promise<TeamspaceCandidates>;
-  getContext(snapshot: DiscoveryResult): ContextProjection;
+  getContext(snapshot: DiscoveryResult): Promise<ContextProjection>;
 };
 
 function ensureHttpResult(result: unknown): AsanaHttpResult {
@@ -132,20 +139,27 @@ async function findTeamspaces(
   };
 }
 
-function getContext(snapshot: DiscoveryResult): ContextProjection {
+async function getContext(
+  snapshot: DiscoveryResult,
+  checkForUpdate: UpdateChecker,
+): Promise<ContextProjection> {
   return {
     workspace: snapshot.workspace,
     teamspace: snapshot.teamspace,
     ticket_prefix: snapshot.ticket_short_id_field.id_prefix,
     schema_fingerprint: snapshot.fingerprint,
     validation_warnings: snapshot.warnings,
+    update_available: await checkForUpdate(),
   };
 }
 
-export function createContextService(executor: AsanaRequestExecutorPort): ContextService {
+export function createContextService(
+  executor: AsanaRequestExecutorPort,
+  checkForUpdate: UpdateChecker = createGitHubUpdateChecker(),
+): ContextService {
   return {
     listWorkspaces: (deadlineMs) => listWorkspaces(executor, deadlineMs),
     findTeamspaces: (input) => findTeamspaces(executor, input),
-    getContext,
+    getContext: (snapshot) => getContext(snapshot, checkForUpdate),
   };
 }

@@ -21,6 +21,7 @@ import {
 } from "./oauth_credentials.js";
 import { buildMcpServer, type InjectedRequestContext } from "./server.js";
 import { buildServices, type CommandServices } from "./services.js";
+import type { UpdateChecker } from "./update_check.js";
 
 export const CLI_USAGE =
   "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login [--oauth]]";
@@ -43,6 +44,7 @@ export type RunCliOptions = {
   readonly personalAccessTokenLogin?: (
     options: AsanaPersonalAccessTokenLoginOptions,
   ) => Promise<void>;
+  readonly checkForUpdate?: UpdateChecker;
 };
 
 function invalidCliUsage(): CommandError {
@@ -121,6 +123,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<void> {
       ...(options.requestContext?.deadlineMs === undefined
         ? {}
         : { deadlineMs: options.requestContext.deadlineMs }),
+      ...(options.checkForUpdate === undefined ? {} : { checkForUpdate: options.checkForUpdate }),
     });
     stdout.write(`${JSON.stringify(report)}\n`);
     return;

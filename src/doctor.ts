@@ -6,6 +6,7 @@ import type { DiscoveryResult } from "./schema_discovery.js";
 import { buildServices, type CommandServices } from "./services.js";
 import { resolveTeamspaceIdentifier, TeamspaceReferenceSchema } from "./teamspace_identity.js";
 import type { WorkspaceList } from "./tools/context.js";
+import { createGitHubUpdateChecker, type UpdateChecker } from "./update_check.js";
 
 export const DOCTOR_USAGE = "Usage: asana-command-mcp doctor [TEAMSPACE_ID_OR_URL]";
 
@@ -29,6 +30,12 @@ export const DoctorReportSchema = z.object({
   authentication: AuthenticationCheckSchema,
   teamspace_schema: TeamspaceSchemaCheckSchema.optional(),
   asana_custom_types_opt_in: PassedStatusSchema.optional(),
+  update_available: z
+    .string()
+    .nullable()
+    .describe(
+      "The latest published server version when newer than the running version; null when already current or the check could not complete.",
+    ),
 });
 
 export type DoctorReport = z.infer<typeof DoctorReportSchema>;
@@ -36,6 +43,7 @@ export type DoctorReport = z.infer<typeof DoctorReportSchema>;
 export type RunDoctorOptions = {
   readonly services?: CommandServices;
   readonly deadlineMs?: number;
+  readonly checkForUpdate?: UpdateChecker;
 };
 
 function usageError(cause?: unknown): CommandError {
@@ -87,6 +95,7 @@ export async function runDoctor(
   const teamspaceId = parseTeamspaceArgument(args);
   const services = options.services ?? buildServices(config);
   const deadlineMs = options.deadlineMs ?? Date.now() + config.toolTimeoutMs;
+  const checkForUpdate = options.checkForUpdate ?? createGitHubUpdateChecker();
 
   let workspaces: WorkspaceList;
   try {
@@ -94,6 +103,7 @@ export async function runDoctor(
   } catch (error) {
     throw stageError(error, "authentication");
   }
+  const updateAvailable = await checkForUpdate();
 
   const authentication = {
     status: "passed" as const,
@@ -103,6 +113,7 @@ export async function runDoctor(
     return DoctorReportSchema.parse({
       status: "passed",
       authentication,
+      update_available: updateAvailable,
     });
   }
 
@@ -126,5 +137,6 @@ export async function runDoctor(
     asana_custom_types_opt_in: {
       status: "passed",
     },
+    update_available: updateAvailable,
   });
 }
