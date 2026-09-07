@@ -29,7 +29,7 @@ export const ErrorPayloadSchema = z.object({
     message: z.string(),
     retryable: z.boolean(),
     suggested_action: z.string().optional(),
-    details: z.record(z.unknown()).optional(),
+    details: z.record(z.string(), z.unknown()).optional(),
   }),
   asana_request_ids: z.array(z.string()),
 });
