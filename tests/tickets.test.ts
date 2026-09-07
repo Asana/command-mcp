@@ -9,7 +9,6 @@ import type {
   WorkspacesApi,
 } from "asana";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 import { FULL_TASK_FIELDS, type Task } from "../src/asana_contracts.js";
 import type {
   AsanaHttpResult,
@@ -19,7 +18,12 @@ import type {
 } from "../src/asana_gateway.js";
 import type { DiscoveryResult } from "../src/schema_discovery.js";
 import { createTicketService, projectTicketView, TicketViewSchema } from "../src/tools/tickets.js";
-import { buildDiscoverySnapshot, DEADLINE_MS, TEAMSPACE_ID } from "./helpers/tool_test_helpers.js";
+import {
+  buildDiscoverySnapshot,
+  DEADLINE_MS,
+  parseEnvelopeData,
+  TEAMSPACE_ID,
+} from "./helpers/tool_test_helpers.js";
 
 const TICKET_GID = "1700000000000001";
 const RELEASE_GID = "1700000000000098";
@@ -93,7 +97,7 @@ function createExecutor(
         traces.push(trace);
       }
       const result = await callback(resources);
-      return z.object({ data: schema }).parse(result.data).data;
+      return parseEnvelopeData(schema, result.data);
     },
     write: async () => unexpectedCall("AsanaRequestExecutor.write"),
     readPage: async () => unexpectedCall("AsanaRequestExecutor.readPage"),

@@ -49,12 +49,12 @@ const TicketLookupSchema = z.object({
 const AssigneeViewSchema = z.object({
   gid: GidSchema.describe("Numeric Asana user GID"),
   name: z.string().describe("Assignee display name"),
-  email: z.string().describe("Assignee email when Asana returns it").optional(),
+  email: z.string().optional().describe("Assignee email when Asana returns it"),
 });
 
 const DependencyViewSchema = z.object({
   gid: GidSchema.describe("Numeric GID of a task blocking this ticket"),
-  name: z.string().describe("Blocking task name when Asana returns it").optional(),
+  name: z.string().optional().describe("Blocking task name when Asana returns it"),
 });
 
 export const TicketViewSchema = z.object({

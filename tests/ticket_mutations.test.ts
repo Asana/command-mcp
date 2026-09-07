@@ -9,7 +9,7 @@ import type {
   WorkspacesApi,
 } from "asana";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import type { z } from "zod";
 import type { Task } from "../src/asana_contracts.js";
 import type {
   AsanaHttpResult,
@@ -25,7 +25,12 @@ import {
   createTicketService,
   UPDATE_PENDING_WARNING,
 } from "../src/tools/tickets.js";
-import { buildDiscoverySnapshot, DEADLINE_MS, TEAMSPACE_ID } from "./helpers/tool_test_helpers.js";
+import {
+  buildDiscoverySnapshot,
+  DEADLINE_MS,
+  parseEnvelopeData,
+  TEAMSPACE_ID,
+} from "./helpers/tool_test_helpers.js";
 
 const TASK_GID = "1700000000000001";
 const TYPE_FIELD_GID = "1900000000000010";
@@ -114,7 +119,7 @@ function executor(
     if (trace !== undefined && typeof requestId === "string") {
       trace.requestIds.push(requestId);
     }
-    return z.object({ data: schema }).parse(response.data).data;
+    return parseEnvelopeData(schema, response.data);
   }
   return {
     createTrace: () => {
