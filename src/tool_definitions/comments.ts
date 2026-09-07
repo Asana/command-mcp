@@ -19,8 +19,8 @@ const GetCommentsInputSchema = withTicketId({
     .describe("Maximum number of comments to return, from 1 to 100"),
   cursor: z
     .string()
-    .describe("Opaque cursor from a prior call for the same ticket and limit")
-    .optional(),
+    .optional()
+    .describe("Opaque cursor from a prior call for the same ticket and limit"),
 }).strict();
 
 const getComments = defineTeamspaceScopedTool({
@@ -53,11 +53,11 @@ const AddCommentInputSchema = withTicketId({
     .string()
     .trim()
     .min(1, "Comment text must not be empty")
+    .optional()
     .describe(
       "Plain-text comment; Markdown is not rendered; exactly one of text or text_html must be provided.",
-    )
-    .optional(),
-  text_html: z.string().describe(COMMENT_TEXT_HTML_DESCRIPTION).optional(),
+    ),
+  text_html: z.string().optional().describe(COMMENT_TEXT_HTML_DESCRIPTION),
 })
   .strict()
   .superRefine((value, context) => {
