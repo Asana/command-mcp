@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { AsanaRequestExecutorPort } from "../../src/asana_gateway.js";
 import type { Config } from "../../src/config.js";
 import type { DiscoveryResult } from "../../src/schema_discovery.js";
@@ -37,6 +38,18 @@ export class UnexpectedExecutorCallError extends Error {
 
 function unexpectedExecutorCall(method: string): never {
   throw new UnexpectedExecutorCallError(method);
+}
+
+/**
+ * Zod v4 can't statically resolve `.data` on `z.object({ data: schema }).parse(...)` when
+ * `schema` is a generic type parameter (its mapped object-shape type can't distribute over an
+ * unresolved `T`); the runtime parse is fine, so this only needs to fix the static type.
+ */
+export function parseEnvelopeData<TSchema extends z.ZodTypeAny>(
+  schema: TSchema,
+  value: unknown,
+): z.infer<TSchema> {
+  return (z.object({ data: schema }).parse(value) as { data: z.infer<TSchema> }).data;
 }
 
 export function createUnexpectedExecutorFake(): AsanaRequestExecutorPort {

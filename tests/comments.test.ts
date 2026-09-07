@@ -26,7 +26,12 @@ import {
   GetCommentsOutputSchema,
 } from "../src/tools/comments.js";
 import type { TicketService } from "../src/tools/tickets.js";
-import { buildDiscoverySnapshot, DEADLINE_MS, TEAMSPACE_ID } from "./helpers/tool_test_helpers.js";
+import {
+  buildDiscoverySnapshot,
+  DEADLINE_MS,
+  parseEnvelopeData,
+  TEAMSPACE_ID,
+} from "./helpers/tool_test_helpers.js";
 
 const TICKET_GID = "1700000000000001";
 const OTHER_TICKET_GID = "1700000000000002";
@@ -123,7 +128,7 @@ function executor(bundle: AsanaResourceBundle, state: ExecutorState): AsanaReque
   ): Promise<z.infer<TSchema>> {
     const response = await callback(bundle);
     collectRequestId(response, trace);
-    return z.object({ data: schema }).parse(response.data).data;
+    return parseEnvelopeData(schema, response.data);
   }
 
   return {

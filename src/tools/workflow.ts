@@ -226,8 +226,20 @@ export function createWorkflowService(
 
   return {
     addDependency: (ticketIdentifier, dependencyIdentifier, snapshot, deadlineMs) =>
-      changeDependency("add", ticketIdentifier, dependencyIdentifier, snapshot, deadlineMs),
+      changeDependency(
+        "add",
+        ticketIdentifier,
+        dependencyIdentifier,
+        snapshot,
+        deadlineMs,
+      ) as Promise<AddDependencyOutput>,
     removeDependency: (ticketIdentifier, dependencyIdentifier, snapshot, deadlineMs) =>
-      changeDependency("remove", ticketIdentifier, dependencyIdentifier, snapshot, deadlineMs),
+      changeDependency(
+        "remove",
+        ticketIdentifier,
+        dependencyIdentifier,
+        snapshot,
+        deadlineMs,
+      ) as Promise<RemoveDependencyOutput>,
   };
 }

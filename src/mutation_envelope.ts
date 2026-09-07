@@ -67,11 +67,25 @@ function zodUnionFromSchemas(schemas: readonly z.ZodTypeAny[]): z.ZodTypeAny {
   return z.union([first, second, ...rest]);
 }
 
-export function mutationVariantsToSchemas(
-  variants: readonly MutationVariant<string, string, z.ZodTypeAny>[],
+type MutationVariantOutput<V> = V extends MutationVariant<
+  infer TStatus,
+  infer TOutcome,
+  infer TDataSchema
+>
+  ? MutationMetadata & {
+      status: TStatus;
+      outcome: TOutcome;
+      data: z.infer<TDataSchema>;
+    }
+  : never;
+
+export function mutationVariantsToSchemas<
+  const TVariants extends readonly MutationVariant<string, string, z.ZodTypeAny>[],
+>(
+  variants: TVariants,
 ): {
-  runtimeSchema: z.ZodTypeAny;
-  protocolSchema: z.ZodTypeAny;
+  runtimeSchema: z.ZodType<MutationVariantOutput<TVariants[number]>>;
+  protocolSchema: z.ZodType<MutationVariantOutput<TVariants[number]>>;
 } {
   if (variants.length === 0) {
     throw new Error("mutationVariantsToSchemas requires at least one variant");
@@ -106,7 +120,12 @@ export function mutationVariantsToSchemas(
     data: zodUnionFromSchemas(dataSchemas),
   });
 
-  return { runtimeSchema, protocolSchema };
+  return {
+    runtimeSchema: runtimeSchema as z.ZodType<MutationVariantOutput<TVariants[number]>>,
+    protocolSchema: protocolSchema as unknown as z.ZodType<
+      MutationVariantOutput<TVariants[number]>
+    >,
+  };
 }
 
 export function buildMutationResult<
