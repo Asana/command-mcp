@@ -52,12 +52,34 @@ function linkCommand(binDirectory: string, command: string, source = commandPath
   symlinkSync(source, join(binDirectory, command));
 }
 
-function createArchive(assetDirectory: string, contents = "release-one"): void {
+function createArchive(assetDirectory: string, version = "1.0.0"): void {
   mkdirSync(assetDirectory, { recursive: true });
   const archivePath = join(assetDirectory, "asana-command-mcp.tgz");
-  writeFileSync(archivePath, contents);
-  const digest = createHash("sha256").update(contents).digest("hex");
+  const stagingRoot = temporaryDirectory("asana-command-mcp-archive");
+  const packageDirectory = join(stagingRoot, "package");
+  mkdirSync(packageDirectory, { recursive: true });
+  writeFileSync(
+    join(packageDirectory, "package.json"),
+    `${JSON.stringify({ name: "@asana/command-mcp", version })}\n`,
+  );
+  const tar = spawnSync("tar", ["-czf", archivePath, "-C", stagingRoot, "package"], {
+    encoding: "utf8",
+  });
+  if (tar.status !== 0) {
+    throw new Error(`Failed to build a test archive: ${tar.stderr}`);
+  }
+  const digest = createHash("sha256").update(readFileSync(archivePath)).digest("hex");
   writeFileSync(join(assetDirectory, "SHA256SUMS"), `${digest}  asana-command-mcp.tgz\n`);
+}
+
+function archiveVersion(archivePath: string): string {
+  const tar = spawnSync("tar", ["-xzOf", archivePath, "package/package.json"], {
+    encoding: "utf8",
+  });
+  if (tar.status !== 0) {
+    throw new Error(`Failed to read the test archive version: ${tar.stderr}`);
+  }
+  return JSON.parse(tar.stdout).version;
 }
 
 function createFakePath(options: {
@@ -70,7 +92,18 @@ function createFakePath(options: {
   rmSync(binDirectory, { recursive: true, force: true });
   mkdirSync(binDirectory, { recursive: true });
 
-  for (const command of ["awk", "cat", "chmod", "mkdir", "mktemp", "mv", "rm", "uname"]) {
+  for (const command of [
+    "awk",
+    "cat",
+    "chmod",
+    "gzip",
+    "mkdir",
+    "mktemp",
+    "mv",
+    "rm",
+    "tar",
+    "uname",
+  ]) {
     linkCommand(binDirectory, command);
   }
   linkCommand(binDirectory, "node", process.execPath);
@@ -87,10 +120,13 @@ function createFakePath(options: {
       `#!/bin/sh
 set -eu
 prefix=''
+archive=''
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--prefix" ]; then
     shift
     prefix="$1"
+  else
+    archive="$1"
   fi
   shift
 done
@@ -104,6 +140,8 @@ if [ "\${1:-}" = "doctor" ]; then
 fi
 EOF
 chmod +x "$prefix/bin/asana-command-mcp"
+mkdir -p "$prefix/lib/node_modules/@asana/command-mcp"
+tar -xzOf "$archive" package/package.json >"$prefix/lib/node_modules/@asana/command-mcp/package.json"
 printf '%s\\n' "$prefix" >>"$TEST_LOG/npm"
 `,
     );
@@ -235,9 +273,9 @@ describe("install.sh", () => {
     expect(first.result.status, first.result.stderr).toBe(0);
     const executable = join(home, ".asana/mcp/bin/asana-command-mcp");
     expect(existsSync(executable)).toBe(true);
-    expect(readFileSync(join(home, ".asana/mcp/asana-command-mcp.tgz"), "utf8")).toBe(
-      "release-one",
-    );
+    expect(archiveVersion(join(home, ".asana/mcp/asana-command-mcp.tgz"))).toBe("1.0.0");
+    expect(first.result.stdout).toContain("Latest release version: 1.0.0");
+    expect(first.result.stdout).not.toContain("Installed version:");
     const cursorConfig = JSON.parse(readFileSync(join(home, ".cursor/mcp.json"), "utf8"));
     expect(cursorConfig).toEqual({
       theme: "dark",
@@ -251,7 +289,7 @@ describe("install.sh", () => {
       },
     });
 
-    createArchive(first.assets, "release-two");
+    createArchive(first.assets, "2.0.0");
     const second = runInstaller({
       root,
       args: ["--all"],
@@ -259,15 +297,27 @@ describe("install.sh", () => {
     });
 
     expect(second.result.status, second.result.stderr).toBe(0);
-    expect(readFileSync(join(home, ".asana/mcp/asana-command-mcp.tgz"), "utf8")).toBe(
-      "release-two",
-    );
+    expect(archiveVersion(join(home, ".asana/mcp/asana-command-mcp.tgz"))).toBe("2.0.0");
+    expect(second.result.stdout).toContain("Installed version: 1.0.0");
+    expect(second.result.stdout).toContain("Latest release version: 2.0.0");
+    expect(second.result.stdout).not.toContain("Already up to date");
     expect(readFileSync(join(first.log, "npm"), "utf8").trim().split("\n")).toHaveLength(2);
     const clientCalls = readFileSync(join(first.log, "clients"), "utf8");
     expect(clientCalls).toContain(
       `claude <mcp> <add> <--transport> <stdio> <--scope> <user> <asana-command> <--> <${executable}>`,
     );
     expect(clientCalls).toContain(`codex <mcp> <add> <asana-command> <--> <${executable}>`);
+
+    const third = runInstaller({
+      root,
+      args: ["--all"],
+      clients: ["claude", "codex", "cursor"],
+    });
+
+    expect(third.result.status, third.result.stderr).toBe(0);
+    expect(third.result.stdout).toContain("Installed version: 2.0.0");
+    expect(third.result.stdout).toContain("Already up to date; skipping reinstall.");
+    expect(readFileSync(join(first.log, "npm"), "utf8").trim().split("\n")).toHaveLength(2);
   });
 
   it("uses wget and can install without configuring clients", () => {
@@ -414,9 +464,7 @@ describe("install.sh", () => {
     expect(result.status, result.stderr).toBe(0);
     expect(existsSync(oldPackage)).toBe(true);
     expect(result.stdout).toContain(`Kept old package: ${oldPackage}`);
-    expect(readFileSync(join(home, ".asana/mcp/asana-command-mcp.tgz"), "utf8")).toBe(
-      "release-one",
-    );
+    expect(archiveVersion(join(home, ".asana/mcp/asana-command-mcp.tgz"))).toBe("1.0.0");
   });
 
   it("rejects an archive whose checksum does not match", () => {
