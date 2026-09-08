@@ -18,45 +18,72 @@ info() {
 
 usage() {
   cat <<'EOF'
-Usage: install.sh [--all | --claude | --codex | --cursor | --no-config]
+Usage: install.sh [--all | --claude | --claude-desktop | --codex | --cursor | --opencode | --no-config]
                   [--delete-old-packages | --keep-old-packages]
 
 Installs or updates Asana Command MCP and configures detected MCP clients.
-With no flags, the installer prompts for each detected client.
+With no flags (same as --all), every detected client is configured
+automatically and undetected ones are skipped without prompting. Passing an
+individual client flag instead requires exactly that client to be installed.
+
+ChatGPT Desktop shares Codex CLI's configuration (~/.codex/config.toml) on
+the same host, so --codex also covers it when the codex command is installed.
 EOF
 }
 
 want_claude=false
+want_claude_desktop=false
 want_codex=false
 want_cursor=false
+want_opencode=false
 selection_explicit=false
+auto_select=true
 old_package_action=prompt
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --all)
       want_claude=true
+      want_claude_desktop=true
       want_codex=true
       want_cursor=true
+      want_opencode=true
       selection_explicit=true
+      auto_select=true
       ;;
     --claude)
       want_claude=true
       selection_explicit=true
+      auto_select=false
+      ;;
+    --claude-desktop)
+      want_claude_desktop=true
+      selection_explicit=true
+      auto_select=false
       ;;
     --codex)
       want_codex=true
       selection_explicit=true
+      auto_select=false
       ;;
     --cursor)
       want_cursor=true
       selection_explicit=true
+      auto_select=false
+      ;;
+    --opencode)
+      want_opencode=true
+      selection_explicit=true
+      auto_select=false
       ;;
     --no-config)
       want_claude=false
+      want_claude_desktop=false
       want_codex=false
       want_cursor=false
+      want_opencode=false
       selection_explicit=true
+      auto_select=false
       ;;
     --delete-old-packages)
       old_package_action=delete
@@ -183,13 +210,19 @@ fi
 mv "$archive_path" "$install_dir/$ARCHIVE_NAME"
 
 has_claude=false
+has_claude_desktop=false
 has_codex=false
 has_cursor=false
+has_opencode=false
 command -v claude >/dev/null 2>&1 && has_claude=true
+claude_desktop_config="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
+claude_desktop_app_path="${ASANA_COMMAND_MCP_CLAUDE_DESKTOP_APP_PATH:-/Applications/Claude.app}"
+[ -d "$claude_desktop_app_path" ] && has_claude_desktop=true
 command -v codex >/dev/null 2>&1 && has_codex=true
 if command -v cursor >/dev/null 2>&1 || command -v agent >/dev/null 2>&1; then
   has_cursor=true
 fi
+command -v opencode >/dev/null 2>&1 && has_opencode=true
 
 snapshot_codex_config() {
   output_path="$1"
@@ -220,10 +253,10 @@ if (!outputPath || !codexConfigPath || !installDir || !serverName) {
 }
 
 const entries = [];
-function readJsonEntry(configPath) {
+function readJsonEntry(configPath, serversKey = "mcpServers") {
   try {
     const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    const entry = config?.mcpServers?.[serverName];
+    const entry = config?.[serversKey]?.[serverName];
     if (entry !== undefined) {
       entries.push(entry);
     }
@@ -234,6 +267,10 @@ function readJsonEntry(configPath) {
 
 readJsonEntry(path.join(process.env.HOME, ".claude.json"));
 readJsonEntry(path.join(process.env.HOME, ".cursor", "mcp.json"));
+readJsonEntry(
+  path.join(process.env.HOME, "Library", "Application Support", "Claude", "claude_desktop_config.json"),
+);
+readJsonEntry(path.join(process.env.HOME, ".config", "opencode", "opencode.json"), "mcp");
 try {
   const contents = fs.readFileSync(codexConfigPath, "utf8").trim();
   if (contents !== "") {
@@ -297,55 +334,75 @@ legacy_packages="$work_dir/legacy-packages"
 snapshot_codex_config "$codex_config_before"
 collect_package_references "$legacy_packages" "$codex_config_before"
 
-prompt_target() {
-  client_name="$1"
-  if [ ! -t 1 ] || [ ! -r /dev/tty ]; then
-    return 0
-  fi
-  printf 'Configure %s? [Y/n] ' "$client_name" >/dev/tty
-  answer=''
-  IFS= read -r answer </dev/tty || true
-  case "$answer" in
-    n|N|no|NO|No) return 1 ;;
-    *) return 0 ;;
-  esac
-}
-
 if [ "$selection_explicit" = false ]; then
-  [ "$has_claude" = false ] || prompt_target "Claude Code" && want_claude="$has_claude"
-  [ "$has_codex" = false ] || prompt_target "Codex" && want_codex="$has_codex"
-  [ "$has_cursor" = false ] || prompt_target "Cursor" && want_cursor="$has_cursor"
+  want_claude="$has_claude"
+  want_claude_desktop="$has_claude_desktop"
+  want_codex="$has_codex"
+  want_cursor="$has_cursor"
+  want_opencode="$has_opencode"
 fi
+
+require_client() {
+  has_client="$1"
+  missing_message="$2"
+  if [ "$has_client" = false ] && [ "$auto_select" = false ]; then
+    die "$missing_message"
+  fi
+}
 
 configured_clients=''
 
 if [ "$want_claude" = true ]; then
-  [ "$has_claude" = true ] || die "Claude Code was selected but the claude command is not installed"
-  claude mcp remove "$SERVER_NAME" --scope user >/dev/null 2>&1 || true
-  claude mcp add --transport stdio --scope user "$SERVER_NAME" -- "$executable"
-  configured_clients="${configured_clients} Claude Code"
+  require_client "$has_claude" "Claude Code was selected but the claude command is not installed"
+  if [ "$has_claude" = true ]; then
+    claude mcp remove "$SERVER_NAME" --scope user >/dev/null 2>&1 || true
+    claude mcp add --transport stdio --scope user "$SERVER_NAME" -- "$executable"
+    configured_clients="${configured_clients} Claude Code"
+  fi
 fi
 
 if [ "$want_codex" = true ]; then
-  [ "$has_codex" = true ] || die "Codex was selected but the codex command is not installed"
-  codex mcp remove "$SERVER_NAME" >/dev/null 2>&1 || true
-  codex mcp add "$SERVER_NAME" -- "$executable"
-  configured_clients="${configured_clients} Codex"
+  require_client "$has_codex" "Codex was selected but the codex command is not installed"
+  if [ "$has_codex" = true ]; then
+    codex mcp remove "$SERVER_NAME" >/dev/null 2>&1 || true
+    codex mcp add "$SERVER_NAME" -- "$executable"
+    configured_clients="${configured_clients} Codex"
+  fi
 fi
 
-if [ "$want_cursor" = true ]; then
-  [ "$has_cursor" = true ] || die "Cursor was selected but neither cursor nor agent is installed"
-  cursor_config="$HOME/.cursor/mcp.json"
-  MCP_CONFIG_PATH="$cursor_config" MCP_EXECUTABLE="$executable" MCP_SERVER_NAME="$SERVER_NAME" \
+write_mcp_json_config() {
+  config_path="$1"
+  servers_key="$2"
+  entry_style="$3"
+  MCP_CONFIG_PATH="$config_path" \
+    MCP_SERVERS_KEY="$servers_key" \
+    MCP_ENTRY_STYLE="$entry_style" \
+    MCP_EXECUTABLE="$executable" \
+    MCP_SERVER_NAME="$SERVER_NAME" \
     node <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
 
 const configPath = process.env.MCP_CONFIG_PATH;
+const serversKey = process.env.MCP_SERVERS_KEY;
+const entryStyle = process.env.MCP_ENTRY_STYLE;
 const executable = process.env.MCP_EXECUTABLE;
 const serverName = process.env.MCP_SERVER_NAME;
-if (!configPath || !executable || !serverName) {
-  throw new Error("missing Cursor configuration input");
+if (!configPath || !serversKey || !entryStyle || !executable || !serverName) {
+  throw new Error("missing MCP configuration input");
+}
+
+const entriesByStyle = {
+  // Cursor documents an explicit "type" field on each server entry.
+  stdio: { type: "stdio", command: executable, args: [] },
+  // Claude Desktop infers stdio from the presence of "command".
+  plain: { command: executable, args: [] },
+  // OpenCode combines the executable and its arguments into one "command" array.
+  "opencode-local": { type: "local", command: [executable], enabled: true },
+};
+const entry = entriesByStyle[entryStyle];
+if (entry === undefined) {
+  throw new Error(`unknown MCP entry style: ${entryStyle}`);
 }
 
 let config = {};
@@ -359,20 +416,16 @@ if (config === null || Array.isArray(config) || typeof config !== "object") {
   throw new Error(`${configPath} must contain a JSON object`);
 }
 if (
-  config.mcpServers !== undefined &&
-  (config.mcpServers === null ||
-    Array.isArray(config.mcpServers) ||
-    typeof config.mcpServers !== "object")
+  config[serversKey] !== undefined &&
+  (config[serversKey] === null ||
+    Array.isArray(config[serversKey]) ||
+    typeof config[serversKey] !== "object")
 ) {
-  throw new Error(`${configPath}.mcpServers must be a JSON object`);
+  throw new Error(`${configPath}.${serversKey} must be a JSON object`);
 }
 
-config.mcpServers ??= {};
-config.mcpServers[serverName] = {
-  type: "stdio",
-  command: executable,
-  args: [],
-};
+config[serversKey] ??= {};
+config[serversKey][serverName] = entry;
 
 fs.mkdirSync(path.dirname(configPath), { recursive: true });
 const temporaryPath = `${configPath}.tmp-${process.pid}-${Date.now()}`;
@@ -383,7 +436,31 @@ fs.writeFileSync(temporaryPath, `${JSON.stringify(config, null, 2)}\n`, {
 });
 fs.renameSync(temporaryPath, configPath);
 NODE
-  configured_clients="${configured_clients} Cursor"
+}
+
+if [ "$want_cursor" = true ]; then
+  require_client "$has_cursor" "Cursor was selected but neither cursor nor agent is installed"
+  if [ "$has_cursor" = true ]; then
+    write_mcp_json_config "$HOME/.cursor/mcp.json" "mcpServers" "stdio"
+    configured_clients="${configured_clients} Cursor"
+  fi
+fi
+
+if [ "$want_claude_desktop" = true ]; then
+  require_client "$has_claude_desktop" \
+    "Claude Desktop was selected but the application is not installed"
+  if [ "$has_claude_desktop" = true ]; then
+    write_mcp_json_config "$claude_desktop_config" "mcpServers" "plain"
+    configured_clients="${configured_clients} Claude Desktop"
+  fi
+fi
+
+if [ "$want_opencode" = true ]; then
+  require_client "$has_opencode" "OpenCode was selected but the opencode command is not installed"
+  if [ "$has_opencode" = true ]; then
+    write_mcp_json_config "$HOME/.config/opencode/opencode.json" "mcp" "opencode-local"
+    configured_clients="${configured_clients} OpenCode"
+  fi
 fi
 
 codex_config_after="$work_dir/codex-after.json"
@@ -429,8 +506,9 @@ info "Asana Command MCP is installed at:"
 info "  $executable"
 if [ -n "$configured_clients" ]; then
   info "Configured:${configured_clients}"
-elif [ "$has_claude" = false ] && [ "$has_codex" = false ] && [ "$has_cursor" = false ]; then
-  info "No supported MCP client commands were detected; the server was installed without client configuration."
+elif [ "$has_claude" = false ] && [ "$has_claude_desktop" = false ] && [ "$has_codex" = false ] &&
+  [ "$has_cursor" = false ] && [ "$has_opencode" = false ]; then
+  info "No supported MCP clients were detected; the server was installed without client configuration."
 else
   info "No MCP clients were configured."
 fi

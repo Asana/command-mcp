@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const INSTALLER_PATH = resolve(import.meta.dirname, "../install.sh");
 const temporaryDirectories: string[] = [];
 
-type Client = "claude" | "codex" | "cursor" | "agent";
+type Client = "claude" | "codex" | "cursor" | "agent" | "opencode";
 type Downloader = "curl" | "wget";
 
 function temporaryDirectory(name: string): string {
@@ -218,6 +218,7 @@ function runInstaller(options: {
   downloader?: Downloader;
   clients?: Client[];
   includeNpm?: boolean;
+  claudeDesktopInstalled?: boolean;
 }) {
   const home = join(options.root, "home with spaces");
   const assets = join(options.root, "assets");
@@ -234,6 +235,13 @@ function runInstaller(options: {
     ...(options.includeNpm === undefined ? {} : { includeNpm: options.includeNpm }),
   });
 
+  // Claude Desktop is detected by an app-bundle directory, not a PATH-resolvable command, and
+  // must never fall back to the real /Applications/Claude.app on the machine running these tests.
+  const claudeDesktopAppPath = join(options.root, "fake-claude-desktop-app");
+  if (options.claudeDesktopInstalled === true) {
+    mkdirSync(claudeDesktopAppPath, { recursive: true });
+  }
+
   const result = spawnSync("/bin/sh", [INSTALLER_PATH, ...(options.args ?? [])], {
     cwd: options.root,
     encoding: "utf8",
@@ -243,6 +251,7 @@ function runInstaller(options: {
       ASSET_DIR: assets,
       TEST_LOG: log,
       ASANA_COMMAND_MCP_RELEASE_BASE_URL: "https://release.invalid",
+      ASANA_COMMAND_MCP_CLAUDE_DESKTOP_APP_PATH: claudeDesktopAppPath,
     },
   });
   return { assets, home, log, result };
@@ -330,21 +339,65 @@ describe("install.sh", () => {
 
     expect(result.status, result.stderr).toBe(0);
     expect(existsSync(join(home, ".asana/mcp/bin/asana-command-mcp"))).toBe(true);
-    expect(result.stdout).toContain("No supported MCP client commands were detected");
+    expect(result.stdout).toContain("No supported MCP clients were detected");
   });
 
-  it("configures all detected clients by default when non-interactive", () => {
+  it("configures every detected client by default and skips undetected ones without prompting", () => {
     const root = temporaryDirectory("command-installer-defaults");
-    const { log, result } = runInstaller({
+    const { home, log, result } = runInstaller({
       root,
       clients: ["claude", "codex", "agent"],
+      claudeDesktopInstalled: true,
     });
 
     expect(result.status, result.stderr).toBe(0);
     const clientCalls = readFileSync(join(log, "clients"), "utf8");
     expect(clientCalls).toContain("claude <mcp> <add>");
     expect(clientCalls).toContain("codex <mcp> <add>");
-    expect(result.stdout).toContain("Configured: Claude Code Codex Cursor");
+    expect(result.stdout).toContain("Configured: Claude Code Codex Cursor Claude Desktop");
+    // opencode was never in the fake PATH, so it must be skipped silently, not fail the install.
+    expect(result.stdout).not.toContain("OpenCode");
+    const claudeDesktopConfig = JSON.parse(
+      readFileSync(
+        join(home, "Library/Application Support/Claude/claude_desktop_config.json"),
+        "utf8",
+      ),
+    );
+    expect(claudeDesktopConfig.mcpServers["asana-command"]).toEqual({
+      command: join(home, ".asana/mcp/bin/asana-command-mcp"),
+      args: [],
+    });
+  });
+
+  it("configures OpenCode when detected by default", () => {
+    const root = temporaryDirectory("command-installer-opencode");
+    const { home, result } = runInstaller({
+      root,
+      clients: ["opencode"],
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Configured: OpenCode");
+    const opencodeConfig = JSON.parse(
+      readFileSync(join(home, ".config/opencode/opencode.json"), "utf8"),
+    );
+    expect(opencodeConfig.mcp["asana-command"]).toEqual({
+      type: "local",
+      command: [join(home, ".asana/mcp/bin/asana-command-mcp")],
+      enabled: true,
+    });
+  });
+
+  it("rejects an explicitly selected Claude Desktop or OpenCode that is not installed", () => {
+    const root = temporaryDirectory("command-installer-missing-desktop-opencode");
+
+    const claudeDesktopResult = runInstaller({ root, args: ["--claude-desktop"] });
+    expect(claudeDesktopResult.result.status).toBe(1);
+    expect(claudeDesktopResult.result.stderr).toContain("Claude Desktop was selected");
+
+    const opencodeResult = runInstaller({ root, args: ["--opencode"] });
+    expect(opencodeResult.result.status).toBe(1);
+    expect(opencodeResult.result.stderr).toContain("OpenCode was selected");
   });
 
   it("deletes unreferenced manual packages outside the scripted install path", () => {
@@ -358,7 +411,15 @@ describe("install.sh", () => {
     const claudePackage = join(downloads, "asana-command-mcp-0.1.0.tgz");
     const codexPackage = join(downloads, "asana-command-mcp-0.1.1.tgz");
     const cursorPackage = join(downloads, "asana-command-mcp-0.1.2.tgz");
-    for (const packagePath of [claudePackage, codexPackage, cursorPackage]) {
+    const claudeDesktopPackage = join(downloads, "asana-command-mcp-0.1.3.tgz");
+    const opencodePackage = join(downloads, "asana-command-mcp-0.1.4.tgz");
+    for (const packagePath of [
+      claudePackage,
+      codexPackage,
+      cursorPackage,
+      claudeDesktopPackage,
+      opencodePackage,
+    ]) {
       writeFileSync(packagePath, "old release");
     }
     writeFileSync(
@@ -393,18 +454,45 @@ describe("install.sh", () => {
         },
       }),
     );
+    mkdirSync(join(home, "Library/Application Support/Claude"), { recursive: true });
+    writeFileSync(
+      join(home, "Library/Application Support/Claude/claude_desktop_config.json"),
+      JSON.stringify({
+        mcpServers: {
+          "asana-command": {
+            command: "npx",
+            args: ["--yes", "--package", claudeDesktopPackage, "asana-command-mcp"],
+          },
+        },
+      }),
+    );
+    mkdirSync(join(home, ".config/opencode"), { recursive: true });
+    writeFileSync(
+      join(home, ".config/opencode/opencode.json"),
+      JSON.stringify({
+        mcp: {
+          "asana-command": {
+            type: "local",
+            command: ["npx", "--yes", "--package", opencodePackage, "asana-command-mcp"],
+          },
+        },
+      }),
+    );
 
     const { result } = runInstaller({
       root,
       args: ["--all", "--delete-old-packages"],
-      clients: ["claude", "codex", "cursor"],
+      clients: ["claude", "codex", "cursor", "opencode"],
+      claudeDesktopInstalled: true,
     });
 
     expect(result.status, result.stderr).toBe(0);
     expect(existsSync(claudePackage)).toBe(false);
     expect(existsSync(codexPackage)).toBe(false);
     expect(existsSync(cursorPackage)).toBe(false);
-    expect(result.stdout.match(/Deleted old package:/g)).toHaveLength(3);
+    expect(existsSync(claudeDesktopPackage)).toBe(false);
+    expect(existsSync(opencodePackage)).toBe(false);
+    expect(result.stdout.match(/Deleted old package:/g)).toHaveLength(5);
   });
 
   it("keeps an old package while an unselected client still references it", () => {
