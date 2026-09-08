@@ -384,7 +384,36 @@ describe("install.sh", () => {
     expect(opencodeConfig.mcp["asana-command"]).toEqual({
       type: "local",
       command: [join(home, ".asana/mcp/bin/asana-command-mcp")],
-      enabled: true,
+    });
+  });
+
+  it("preserves a user-disabled OpenCode entry's enabled: false across a rerun", () => {
+    const root = temporaryDirectory("command-installer-opencode-disabled");
+    const home = join(root, "home with spaces");
+    mkdirSync(join(home, ".config/opencode"), { recursive: true });
+    writeFileSync(
+      join(home, ".config/opencode/opencode.json"),
+      JSON.stringify({
+        mcp: {
+          "asana-command": {
+            type: "local",
+            command: ["/old/path/asana-command-mcp"],
+            enabled: false,
+          },
+        },
+      }),
+    );
+
+    const { result } = runInstaller({ root, args: ["--opencode"], clients: ["opencode"] });
+
+    expect(result.status, result.stderr).toBe(0);
+    const opencodeConfig = JSON.parse(
+      readFileSync(join(home, ".config/opencode/opencode.json"), "utf8"),
+    );
+    expect(opencodeConfig.mcp["asana-command"]).toEqual({
+      type: "local",
+      command: [join(home, ".asana/mcp/bin/asana-command-mcp")],
+      enabled: false,
     });
   });
 

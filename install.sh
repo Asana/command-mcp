@@ -397,8 +397,10 @@ const entriesByStyle = {
   stdio: { type: "stdio", command: executable, args: [] },
   // Claude Desktop infers stdio from the presence of "command".
   plain: { command: executable, args: [] },
-  // OpenCode combines the executable and its arguments into one "command" array.
-  "opencode-local": { type: "local", command: [executable], enabled: true },
+  // OpenCode combines the executable and its arguments into one "command" array. No "enabled"
+  // field here: omitting it lets OpenCode's own default apply, and merging below (rather than
+  // replacing the entry outright) preserves a user's own "enabled": false untouched.
+  "opencode-local": { type: "local", command: [executable] },
 };
 const entry = entriesByStyle[entryStyle];
 if (entry === undefined) {
@@ -425,7 +427,15 @@ if (
 }
 
 config[serversKey] ??= {};
-config[serversKey][serverName] = entry;
+const existingEntry = config[serversKey][serverName];
+const preservedFields =
+  existingEntry !== null && typeof existingEntry === "object" && !Array.isArray(existingEntry)
+    ? existingEntry
+    : {};
+// Merge onto the existing entry (when there is one) instead of replacing it outright, so a
+// client- or user-managed field the constructed entry doesn't know about — OpenCode's
+// "enabled": false, for example — survives a rerun of this installer.
+config[serversKey][serverName] = { ...preservedFields, ...entry };
 
 fs.mkdirSync(path.dirname(configPath), { recursive: true });
 const temporaryPath = `${configPath}.tmp-${process.pid}-${Date.now()}`;
