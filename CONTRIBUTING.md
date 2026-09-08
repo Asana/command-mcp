@@ -38,8 +38,11 @@ Include the command's complete, unfiltered output in the pull-request descriptio
 `npm run check` proves type checking, linting, non-integration tests, and the production build. It does not prove behavior against the live Asana API.
 
 Installer tests execute `install.sh` with an isolated home directory, local release fixtures, and
-fake client commands. They must not read or modify the developer's real Claude, Codex, or Cursor
-configuration. Also check the POSIX shell syntax directly when changing the installer:
+fake client commands. They must not read or modify the developer's real Claude, Claude Desktop,
+Codex, Cursor, or OpenCode configuration — Claude Desktop detection in particular must always go
+through the `ASANA_COMMAND_MCP_CLAUDE_DESKTOP_APP_PATH` override rather than the real
+`/Applications/Claude.app`, since that path may genuinely exist on the machine running the tests.
+Also check the POSIX shell syntax directly when changing the installer:
 
 ```sh
 sh -n install.sh
