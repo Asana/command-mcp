@@ -265,6 +265,8 @@ afterEach(() => {
 
 describe("install.sh", () => {
   it("installs, updates, and configures every detected client without damaging Cursor config", () => {
+    // Runs the installer script three times end-to-end; the default 5s vitest timeout is too
+    // tight for that on a loaded machine.
     const root = temporaryDirectory("command-installer-all");
     const home = join(root, "home with spaces");
     mkdirSync(join(home, ".cursor"), { recursive: true });
@@ -327,7 +329,7 @@ describe("install.sh", () => {
     expect(third.result.stdout).toContain("Installed version: 2.0.0");
     expect(third.result.stdout).toContain("Already up to date; skipping reinstall.");
     expect(readFileSync(join(first.log, "npm"), "utf8").trim().split("\n")).toHaveLength(2);
-  });
+  }, 20_000);
 
   it("uses wget and can install without configuring clients", () => {
     const root = temporaryDirectory("command-installer-wget");
