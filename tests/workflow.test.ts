@@ -25,6 +25,7 @@ import {
   buildDiscoverySnapshot,
   createUnexpectedTicketServiceFake,
   DEADLINE_MS,
+  parseEnvelopeData,
   TEAMSPACE_ID,
 } from "./helpers/tool_test_helpers.js";
 
@@ -125,7 +126,7 @@ function executor(bundle: AsanaResourceBundle, observed: ExecutorState): AsanaRe
       observed.writes.push(options.deadlineMs);
       const response = await callback(bundle);
       collectRequestId(response, trace);
-      return z.object({ data: schema }).parse(response.data).data;
+      return parseEnvelopeData(schema, response.data);
     },
     readPage: async (schema, options, callback, trace) => {
       observed.reads.push(options.deadlineMs);

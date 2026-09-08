@@ -71,15 +71,15 @@ export const ListTicketFiltersSchema = z
       .string()
       .trim()
       .min(1)
-      .describe("Opaque cursor from a prior call with exactly the same filters and limit")
-      .optional(),
-    completed: z.boolean().describe("Exact ticket completion state").optional(),
-    type: NonEmptyNameSchema.describe("Teamspace-local ticket type name").optional(),
-    label: NonEmptyNameSchema.describe("Teamspace-local label name").optional(),
-    assignee: NonEmptyNameSchema.describe(
+      .optional()
+      .describe("Opaque cursor from a prior call with exactly the same filters and limit"),
+    completed: z.boolean().optional().describe("Exact ticket completion state"),
+    type: NonEmptyNameSchema.optional().describe("Teamspace-local ticket type name"),
+    label: NonEmptyNameSchema.optional().describe("Teamspace-local label name"),
+    assignee: NonEmptyNameSchema.optional().describe(
       "Assignee name, email address, or numeric Asana user GID",
-    ).optional(),
-    release: NonEmptyNameSchema.describe("Release project name or numeric GID").optional(),
+    ),
+    release: NonEmptyNameSchema.optional().describe("Release project name or numeric GID"),
   })
   .strict();
 
@@ -89,10 +89,10 @@ export const SearchTicketFiltersSchema = z
       .string()
       .trim()
       .min(1, "Search text must not be empty")
-      .describe("Distinctive text to search for in ticket names and descriptions")
-      .optional(),
+      .optional()
+      .describe("Distinctive text to search for in ticket names and descriptions"),
     assignee: WorkspaceSearchAssigneeSchema.optional(),
-    completed: z.boolean().describe("Exact completion state").optional(),
+    completed: z.boolean().optional().describe("Exact completion state"),
     "completed_on.before": DateOnlySchema.optional(),
     "completed_on.after": DateOnlySchema.optional(),
     compact: z
@@ -143,26 +143,26 @@ export const LabelUpdateSchema = z
 
 export const UpdateTicketFieldsSchema = z
   .object({
-    name: NonEmptyNameSchema.describe("The replacement ticket name").optional(),
+    name: NonEmptyNameSchema.optional().describe("The replacement ticket name"),
     description: z
       .string()
+      .optional()
       .describe(
         "The replacement plain-text description; an empty string clears it. Markdown is not rendered; use description_html for rich formatting.",
-      )
-      .optional(),
-    description_html: z.string().describe(TICKET_DESCRIPTION_HTML_DESCRIPTION).optional(),
-    completed: z.boolean().describe("Whether the ticket is completed").optional(),
-    type: NonEmptyNameSchema.describe("A Teamspace-local ticket type option name").optional(),
+      ),
+    description_html: z.string().optional().describe(TICKET_DESCRIPTION_HTML_DESCRIPTION),
+    completed: z.boolean().optional().describe("Whether the ticket is completed"),
+    type: NonEmptyNameSchema.optional().describe("A Teamspace-local ticket type option name"),
     labels: LabelUpdateSchema.optional(),
     assignee: AssigneeIdentifierSchema.nullable()
-      .describe("An Asana user GID or email address, or null to clear the assignee")
-      .optional(),
+      .optional()
+      .describe("An Asana user GID or email address, or null to clear the assignee"),
     predicted_start_on: DateOnlySchema.nullable()
-      .describe("The predicted start date in YYYY-MM-DD form, or null to clear it")
-      .optional(),
+      .optional()
+      .describe("The predicted start date in YYYY-MM-DD form, or null to clear it"),
     predicted_completion_on: DateOnlySchema.nullable()
-      .describe("The predicted completion date in YYYY-MM-DD form, or null to clear it")
-      .optional(),
+      .optional()
+      .describe("The predicted completion date in YYYY-MM-DD form, or null to clear it"),
   })
   .strict();
 
@@ -171,22 +171,22 @@ export const CreateTicketFieldsSchema = z
     name: NonEmptyNameSchema.describe("The ticket name"),
     description: z
       .string()
+      .optional()
       .describe(
         "The initial plain-text description. Markdown is not rendered; use description_html for rich formatting.",
-      )
-      .optional(),
-    description_html: z.string().describe(TICKET_DESCRIPTION_HTML_DESCRIPTION).optional(),
-    type: NonEmptyNameSchema.describe("A Teamspace-local ticket type option name").optional(),
-    labels: LabelNamesSchema.describe("Initial Teamspace-local label option names").optional(),
-    assignee: AssigneeIdentifierSchema.describe(
+      ),
+    description_html: z.string().optional().describe(TICKET_DESCRIPTION_HTML_DESCRIPTION),
+    type: NonEmptyNameSchema.optional().describe("A Teamspace-local ticket type option name"),
+    labels: LabelNamesSchema.optional().describe("Initial Teamspace-local label option names"),
+    assignee: AssigneeIdentifierSchema.optional().describe(
       "Initial assignee user GID or email address",
-    ).optional(),
-    predicted_start_on: DateOnlySchema.describe(
+    ),
+    predicted_start_on: DateOnlySchema.optional().describe(
       "Initial predicted start date in YYYY-MM-DD form",
-    ).optional(),
-    predicted_completion_on: DateOnlySchema.describe(
+    ),
+    predicted_completion_on: DateOnlySchema.optional().describe(
       "Initial predicted completion date in YYYY-MM-DD form",
-    ).optional(),
+    ),
   })
   .strict();
 

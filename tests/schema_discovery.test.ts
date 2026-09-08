@@ -13,6 +13,7 @@ import {
   type FieldDefinition,
   readReferencedReleaseGids,
 } from "../src/schema_discovery.js";
+import { parseEnvelopeData } from "./helpers/tool_test_helpers.js";
 
 const TEAMSPACE_ID = "1600000000000001";
 const WORKSPACE = { gid: "1500000000000001", name: "Command Workspace" };
@@ -94,8 +95,7 @@ function createFakeExecutor(state: FakeState): AsanaRequestExecutorPort {
         },
       };
       const result = await callback(resources as never);
-      const envelope = z.object({ data: schema });
-      return envelope.parse(result.data).data;
+      return parseEnvelopeData(schema, result.data);
     },
     write: async () => unusedMethod("write"),
     readPage: async (schema, _options, callback) => {

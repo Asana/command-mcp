@@ -9,7 +9,7 @@ import type {
   WorkspacesApi,
 } from "asana";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import type { z } from "zod";
 import type { Task } from "../src/asana_contracts.js";
 import type {
   AsanaHttpResult,
@@ -21,7 +21,12 @@ import { CommandError } from "../src/errors.js";
 import type { DiscoveryResult, ReleaseReference } from "../src/schema_discovery.js";
 import { createReleaseService } from "../src/tools/releases.js";
 import type { TicketService } from "../src/tools/tickets.js";
-import { buildDiscoverySnapshot, DEADLINE_MS, TEAMSPACE_ID } from "./helpers/tool_test_helpers.js";
+import {
+  buildDiscoverySnapshot,
+  DEADLINE_MS,
+  parseEnvelopeData,
+  TEAMSPACE_ID,
+} from "./helpers/tool_test_helpers.js";
 
 const TICKET_GID = "1700000000000001";
 const RELEASE_GID = "1800000000000101";
@@ -101,7 +106,7 @@ function executor(bundle: AsanaResourceBundle, observed: ExecutorState): AsanaRe
     if (trace !== undefined && typeof requestId === "string") {
       trace.requestIds.push(requestId);
     }
-    return z.object({ data: schema }).parse(response.data).data;
+    return parseEnvelopeData(schema, response.data);
   }
   return {
     createTrace: () => {

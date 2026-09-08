@@ -137,10 +137,10 @@ export const NextPageSchema = z
   })
   .nullable();
 
-export function singleObjectEnvelope<T extends z.ZodTypeAny>(dataSchema: T) {
-  return z.object({
-    data: dataSchema,
-  });
+export function singleObjectEnvelope<T extends z.ZodTypeAny>(
+  dataSchema: T,
+): z.ZodType<{ data: z.infer<T> }> {
+  return z.object({ data: dataSchema }) as unknown as z.ZodType<{ data: z.infer<T> }>;
 }
 
 export function collectionEnvelope<T extends z.ZodTypeAny>(itemSchema: T) {

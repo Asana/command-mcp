@@ -122,10 +122,10 @@ describe("workflow tool definitions", () => {
           dependencies: [{ gid: DEPENDENCY_GID, name: "Blocking ticket" }],
         },
       };
-      const method: WorkflowService[typeof methodName] = async (...args) => {
+      const method: WorkflowService[typeof methodName] = (async (...args) => {
         observedCalls.push(args);
         return mutation;
-      };
+      }) as WorkflowService[typeof methodName];
       const workflow = workflowService({ [methodName]: method });
       const context: CallContext = {
         deadlineMs: DEADLINE_MS,
