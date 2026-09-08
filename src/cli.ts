@@ -13,6 +13,7 @@ import type { Config } from "./config.js";
 import { loadConfig } from "./config.js";
 import { runDoctor, validateDoctorArguments } from "./doctor.js";
 import { CommandError } from "./errors.js";
+import { applyJsonSchemaDialectWorkaround } from "./json_schema_dialect_workaround.js";
 import {
   createDefaultOAuthCredentialStore,
   createDefaultPersonalAccessTokenStore,
@@ -134,6 +135,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<void> {
     ...(options.requestContext === undefined ? {} : { requestContext: options.requestContext }),
   });
   const transport = options.transport ?? new StdioServerTransport();
+  applyJsonSchemaDialectWorkaround(transport);
   await server.connect(transport);
   const mode = config.readOnly ? "read-only" : "read-write";
   stderr.write(`Asana Command MCP server ready (${mode} mode)\n`);
