@@ -1,6 +1,6 @@
 # Asana Command MCP
 
-`@asana/command-mcp` is a local [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for working with Asana Command tickets from Claude Code, Codex, or Cursor.
+`@asana/command-mcp` is a local [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for working with Asana Command tickets from Claude Code, Claude Desktop, Codex, Cursor, or OpenCode.
 
 The server runs on your machine over stdio. By default, it authenticates with an Asana personal access token (PAT) stored in your operating system keychain. OAuth is also supported as a fallback.
 
@@ -17,7 +17,7 @@ The server runs on your machine over stdio. By default, it authenticates with an
 - npm
 - macOS or Linux with `curl` or `wget`
 - An Asana account
-- Claude Code, Codex, or Cursor
+- Claude Code, Claude Desktop, Codex, Cursor, or OpenCode
 
 ## Install or update
 
@@ -33,25 +33,31 @@ wget -qO- https://github.com/Asana/command-mcp/releases/latest/download/install.
 
 The installer:
 
-- downloads the latest release and verifies its SHA-256 checksum;
+- downloads the latest release and verifies its SHA-256 checksum, skipping reinstallation when
+  already up to date;
 - installs it under `~/.asana/mcp`;
-- detects the `claude`, `codex`, `cursor`, and Cursor Agent (`agent`) commands;
-- offers to configure each detected client as a user-level stdio MCP server.
+- detects Claude Code (`claude`), Claude Desktop (its installed application), Codex (`codex`),
+  Cursor (`cursor` or Cursor Agent's `agent`), and OpenCode (`opencode`);
+- automatically configures every detected client as a user-level stdio MCP server.
 
 Run the same command again to update the existing installation. The executable path remains
 `~/.asana/mcp/bin/asana-command-mcp`, so configured clients do not need a version-specific path.
 
-The prompt defaults to configuring every detected client. For non-interactive use, select clients
-explicitly:
+ChatGPT Desktop shares Codex CLI's configuration (`~/.codex/config.toml`) on the same host, so
+having the `codex` command installed also covers ChatGPT Desktop; there is no separate flag for it.
+
+With no flags (equivalent to `--all`), the installer configures every client it detects and
+silently skips the rest — nothing is installed or configured for a client that isn't present, and
+nothing prompts. To require one specific client and fail loudly if it's missing, select it
+explicitly instead:
 
 ```sh
 curl -fsSL https://github.com/Asana/command-mcp/releases/latest/download/install.sh \
   | sh -s -- --claude --codex --cursor
 ```
 
-Use `--all` to require all three clients, or `--no-config` to install without changing client
-configuration. Selecting a client whose command is not installed causes the installer to stop with
-an error.
+Or use `--no-config` to install without changing any client configuration. Explicitly selecting a
+client that isn't installed causes the installer to stop with an error; auto-detection never does.
 
 When replacing an existing `asana-command` client entry, the installer detects versioned `.tgz`
 packages referenced by the old configuration. If an old package is outside `~/.asana/mcp` and no
@@ -164,9 +170,12 @@ claude mcp get asana-command
 codex mcp list
 ```
 
-For Cursor, open **Settings → Tools & MCP** or inspect `~/.cursor/mcp.json`. The installer
-preserves unrelated entries in that file. If authentication stops working, run `auth login` again
-for a PAT or `auth login --oauth` for OAuth, then restart the client.
+For Cursor, open **Settings → Tools & MCP** or inspect `~/.cursor/mcp.json`. For Claude Desktop,
+open **Settings → Developer** or inspect
+`~/Library/Application Support/Claude/claude_desktop_config.json`. For OpenCode, run
+`opencode mcp list` or inspect `~/.config/opencode/opencode.json`. The installer preserves
+unrelated entries in every config file it touches. If authentication stops working, run
+`auth login` again for a PAT or `auth login --oauth` for OAuth, then restart the client.
 
 ## Manual client configuration
 
@@ -193,6 +202,35 @@ For Cursor, add a user-level stdio entry to `~/.cursor/mcp.json`:
 }
 ```
 
+For Claude Desktop, add the same shape (without `"type"`) to
+`~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "asana-command": {
+      "command": "/absolute/path/to/.asana/mcp/bin/asana-command-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+For OpenCode, add an entry under `mcp` in `~/.config/opencode/opencode.json`, combining the
+executable and its arguments into one `command` array:
+
+```json
+{
+  "mcp": {
+    "asana-command": {
+      "type": "local",
+      "command": ["/absolute/path/to/.asana/mcp/bin/asana-command-mcp"],
+      "enabled": true
+    }
+  }
+}
+```
+
 MCP clients do not reliably expand `~` in configuration files; use an absolute path.
 
 ## Uninstall
@@ -205,7 +243,9 @@ codex mcp remove asana-command
 rm -rf "$HOME/.asana/mcp"
 ```
 
-For Cursor, remove only the `asana-command` entry from `~/.cursor/mcp.json`.
+For Cursor, remove only the `asana-command` entry from `~/.cursor/mcp.json`. For Claude Desktop,
+remove it from `~/Library/Application Support/Claude/claude_desktop_config.json`. For OpenCode,
+remove it from `~/.config/opencode/opencode.json`.
 
 ## Configuration
 
