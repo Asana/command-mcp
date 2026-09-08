@@ -58,6 +58,7 @@ class RecordingTransport implements Transport {
   onclose?: () => void;
   onerror?: (error: Error) => void;
   onmessage?: (message: JSONRPCMessage) => void;
+  readonly sentMessages: JSONRPCMessage[] = [];
 
   constructor(private readonly events: string[]) {}
 
@@ -65,7 +66,9 @@ class RecordingTransport implements Transport {
     this.events.push("connected");
   }
 
-  async send(_message: JSONRPCMessage): Promise<void> {}
+  async send(message: JSONRPCMessage): Promise<void> {
+    this.sentMessages.push(message);
+  }
 
   async close(): Promise<void> {}
 }
@@ -136,6 +139,41 @@ describe("CLI", () => {
 
     expect(oauthLoads).toBe(0);
     expect(events).toEqual(["connected"]);
+  });
+
+  it("applies the JSON Schema dialect workaround to the connected transport", async () => {
+    const events: string[] = [];
+    const transport = new RecordingTransport(events);
+
+    await runCli({
+      args: [],
+      env: {},
+      personalAccessTokenStore: createPersonalAccessTokenStore("personal-access-token"),
+      oauthCredentialStore: createOAuthCredentialStore(),
+      services: createDoctorServices(),
+      transport,
+      stdout: createWriter([]),
+      stderr: createWriter([]),
+    });
+
+    await transport.send({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        tools: [
+          {
+            name: "get_context",
+            inputSchema: { $schema: "http://json-schema.org/draft-07/schema#", type: "object" },
+          },
+        ],
+      },
+    } as JSONRPCMessage);
+
+    expect(transport.sentMessages[0]).toMatchObject({
+      result: {
+        tools: [{ inputSchema: { $schema: "https://json-schema.org/draft/2020-12/schema" } }],
+      },
+    });
   });
 
   it("falls back to stored OAuth credentials when no personal access token exists", async () => {
