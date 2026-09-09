@@ -11,6 +11,13 @@ The server runs on your machine over stdio. By default, it authenticates with an
 > Behavior may change without notice, and there is no guarantee of continued availability or support.
 > Use of this software is entirely at your own risk.
 
+## Quick setup
+
+1. Run the [installer](#install-or-update).
+2. If you aren't already signed in, the installer checks for stored Asana credentials and
+   offers to [sign you in](#sign-in-to-asana) with a personal access token on the spot.
+3. Verify the connection any time with [`doctor`](#check-the-connection).
+
 ## Requirements
 
 - Node.js 22 or newer
@@ -38,7 +45,9 @@ The installer:
 - installs it under `~/.asana/mcp`;
 - detects Claude Code (`claude`), Claude Desktop (its installed application), Codex (`codex`),
   Cursor (`cursor` or Cursor Agent's `agent`), and OpenCode (`opencode`);
-- automatically configures every detected client as a user-level stdio MCP server.
+- automatically configures every detected client as a user-level stdio MCP server;
+- checks whether Asana authentication is already configured and, if not, offers to sign you in
+  interactively.
 
 Run the same command again to update the existing installation. The executable path remains
 `~/.asana/mcp/bin/asana-command-mcp`, so configured clients do not need a version-specific path.
@@ -48,8 +57,9 @@ having the `codex` command installed also covers ChatGPT Desktop; there is no se
 
 With no flags (equivalent to `--all`), the installer configures every client it detects and
 silently skips the rest — nothing is installed or configured for a client that isn't present, and
-nothing prompts. To require one specific client and fail loudly if it's missing, select it
-explicitly instead:
+nothing prompts about which clients to configure. (The installer may still ask you to sign in to
+Asana if you aren't already authenticated — see [Quick setup](#quick-setup).) To require one
+specific client and fail loudly if it's missing, select it explicitly instead:
 
 ```sh
 curl -fsSL https://github.com/Asana/command-mcp/releases/latest/download/install.sh \

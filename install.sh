@@ -523,7 +523,40 @@ else
   info "No MCP clients were configured."
 fi
 info ""
-info "Next, sign in to Asana:"
-info "  \"$executable\" auth login"
+
+auth_configured=false
+if "$executable" auth status >/dev/null 2>&1; then
+  auth_configured=true
+fi
+
+if [ "$auth_configured" = true ]; then
+  info "Asana sign-in: already configured."
+elif [ -t 1 ] && [ -r /dev/tty ]; then
+  printf 'Asana is not signed in yet. Sign in now with a personal access token? [Y/n] ' >/dev/tty
+  answer=''
+  IFS= read -r answer </dev/tty || true
+  case "$answer" in
+    n | N | no | NO | No) ;;
+    *)
+      if "$executable" auth login </dev/tty; then
+        if "$executable" auth status >/dev/null 2>&1; then
+          info "Signed in to Asana."
+          auth_configured=true
+        else
+          info "Sign-in did not complete."
+        fi
+      else
+        info "Sign-in did not complete."
+      fi
+      ;;
+  esac
+fi
+
+if [ "$auth_configured" = false ]; then
+  info ""
+  info "Next, sign in to Asana:"
+  info "  \"$executable\" auth login"
+  info "  (or \"$executable\" auth login --oauth to use OAuth instead)"
+fi
 info ""
 info "Run this installer again at any time to update to the latest release."

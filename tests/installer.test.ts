@@ -138,6 +138,14 @@ if [ "\${1:-}" = "doctor" ]; then
   printf '%s\\n' '{"error":{"code":"invalid_configuration","message":"Asana login is missing; run asana-command-mcp auth login"}}'
   exit 1
 fi
+if [ "\${1:-}" = "auth" ] && [ "\${2:-}" = "status" ]; then
+  [ -f "$TEST_LOG/auth-configured" ]
+  exit $?
+fi
+if [ "\${1:-}" = "auth" ] && [ "\${2:-}" = "login" ]; then
+  : >"$TEST_LOG/auth-configured"
+  exit 0
+fi
 EOF
 chmod +x "$prefix/bin/asana-command-mcp"
 mkdir -p "$prefix/lib/node_modules/@asana/command-mcp"
@@ -219,12 +227,16 @@ function runInstaller(options: {
   clients?: Client[];
   includeNpm?: boolean;
   claudeDesktopInstalled?: boolean;
+  authConfigured?: boolean;
 }) {
   const home = join(options.root, "home with spaces");
   const assets = join(options.root, "assets");
   const log = join(options.root, "log");
   mkdirSync(home, { recursive: true });
   mkdirSync(log, { recursive: true });
+  if (options.authConfigured === true) {
+    writeFileSync(join(log, "auth-configured"), "");
+  }
   if (!existsSync(join(assets, "asana-command-mcp.tgz"))) {
     createArchive(assets);
   }
@@ -342,6 +354,34 @@ describe("install.sh", () => {
     expect(result.status, result.stderr).toBe(0);
     expect(existsSync(join(home, ".asana/mcp/bin/asana-command-mcp"))).toBe(true);
     expect(result.stdout).toContain("No supported MCP clients were detected");
+  });
+
+  // The installer only prompts to sign in when stdin is a TTY (`[ -t 1 ] && [ -r /dev/tty ]`),
+  // matching the pre-existing `remove_old_package` prompt. spawnSync's piped stdio is never a
+  // TTY, so that interactive branch is not exercised here and is verified manually instead.
+  it("skips the sign-in prompt when Asana auth is already configured", () => {
+    const root = temporaryDirectory("command-installer-auth-configured");
+    const { result } = runInstaller({
+      root,
+      args: ["--no-config"],
+      authConfigured: true,
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Asana sign-in: already configured.");
+    expect(result.stdout).not.toContain("Next, sign in to Asana");
+  });
+
+  it("prints a non-interactive sign-in hint when Asana auth is not configured", () => {
+    const root = temporaryDirectory("command-installer-auth-missing");
+    const { result } = runInstaller({
+      root,
+      args: ["--no-config"],
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Next, sign in to Asana");
+    expect(result.stdout).toContain("auth login --oauth");
   });
 
   it("configures every detected client by default and skips undetected ones without prompting", () => {
