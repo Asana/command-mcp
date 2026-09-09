@@ -238,7 +238,8 @@ describe("CLI", () => {
   it("rejects incomplete auth subcommands before loading configuration", async () => {
     await expect(runCli({ args: ["auth"], env: {} })).rejects.toMatchObject({
       code: "invalid_input",
-      message: "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login [--oauth]]",
+      message:
+        "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login [--oauth] | auth status]",
     });
   });
 
@@ -310,7 +311,8 @@ describe("CLI", () => {
   it("rejects unknown subcommands before loading configuration", async () => {
     await expect(runCli({ args: ["serve"], env: {} })).rejects.toMatchObject({
       code: "invalid_input",
-      message: "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login [--oauth]]",
+      message:
+        "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login [--oauth] | auth status]",
     });
   });
 

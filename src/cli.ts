@@ -25,7 +25,7 @@ import { buildServices, type CommandServices } from "./services.js";
 import type { UpdateChecker } from "./update_check.js";
 
 export const CLI_USAGE =
-  "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login [--oauth]]";
+  "Usage: asana-command-mcp [doctor [TEAMSPACE_ID_OR_URL] | auth login [--oauth] | auth status]";
 
 type OutputWriter = {
   write(data: string): unknown;
@@ -69,8 +69,22 @@ export async function runCli(options: RunCliOptions = {}): Promise<void> {
       subcommandArgs.length === 2 &&
       subcommandArgs[0] === "login" &&
       subcommandArgs[1] === "--oauth";
-    if (!isPersonalAccessTokenLogin && !isOAuthLogin) {
+    const isStatus = subcommandArgs.length === 1 && subcommandArgs[0] === "status";
+    if (!isPersonalAccessTokenLogin && !isOAuthLogin && !isStatus) {
       throw invalidCliUsage();
+    }
+    if (isStatus) {
+      const env = options.env ?? process.env;
+      const personalAccessTokenStore =
+        options.personalAccessTokenStore ?? createDefaultPersonalAccessTokenStore();
+      const personalAccessToken = await personalAccessTokenStore.load();
+      const oauthCredentialStore =
+        options.oauthCredentialStore ?? createDefaultOAuthCredentialStore();
+      const oauthCredentials =
+        personalAccessToken === null ? await oauthCredentialStore.load() : null;
+      const config = loadConfig(env, { personalAccessToken, oauthCredentials });
+      stdout.write(`Asana authentication is configured (${config.authentication.type}).\n`);
+      return;
     }
     if (isOAuthLogin) {
       const env = options.env ?? process.env;
