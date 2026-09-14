@@ -43,16 +43,21 @@ function createThrowingApi<T extends object>(apiName: string): T {
 type ResourceMethods = {
   getWorkspaces?: WorkspacesApi["getWorkspacesWithHttpInfo"];
   typeahead?: TypeaheadApi["typeaheadForWorkspaceWithHttpInfo"];
+  getCustomTypes?: CustomTypesApi["getCustomTypesWithHttpInfo"];
 };
 
 function createResourceBundle(methods: ResourceMethods): AsanaResourceBundle {
   const workspaces = createThrowingApi<WorkspacesApi>("workspaces");
   const typeahead = createThrowingApi<TypeaheadApi>("typeahead");
+  const customTypes = createThrowingApi<CustomTypesApi>("customTypes");
   if (methods.getWorkspaces !== undefined) {
     workspaces.getWorkspacesWithHttpInfo = methods.getWorkspaces;
   }
   if (methods.typeahead !== undefined) {
     typeahead.typeaheadForWorkspaceWithHttpInfo = methods.typeahead;
+  }
+  if (methods.getCustomTypes !== undefined) {
+    customTypes.getCustomTypesWithHttpInfo = methods.getCustomTypes;
   }
 
   return {
@@ -61,9 +66,22 @@ function createResourceBundle(methods: ResourceMethods): AsanaResourceBundle {
     stories: createThrowingApi<StoriesApi>("stories"),
     attachments: createThrowingApi<AttachmentsApi>("attachments"),
     customFieldSettings: createThrowingApi<CustomFieldSettingsApi>("customFieldSettings"),
-    customTypes: createThrowingApi<CustomTypesApi>("customTypes"),
+    customTypes,
     typeahead,
     workspaces,
+  };
+}
+
+function customTypesFor(
+  resolvableGids: ReadonlySet<string>,
+): CustomTypesApi["getCustomTypesWithHttpInfo"] {
+  return async (opts) => {
+    const projectGid = (opts as { project?: string } | undefined)?.project;
+    const types =
+      projectGid !== undefined && resolvableGids.has(projectGid)
+        ? [{ gid: "1800000000000001", name: "Dev ticket" }]
+        : [];
+    return collectionResult(types);
   };
 }
 
@@ -175,7 +193,14 @@ describe("context service", () => {
         { gid: "1600000000000002", name: "Mobile" },
       ]);
     };
-    const service = createContextService(createExecutor(createResourceBundle({ typeahead })));
+    const service = createContextService(
+      createExecutor(
+        createResourceBundle({
+          typeahead,
+          getCustomTypes: customTypesFor(new Set([TEAMSPACE_GID, "1600000000000002"])),
+        }),
+      ),
+    );
 
     const result = await service.findTeamspaces({
       workspaceGid: WORKSPACE_GID,
@@ -197,16 +222,47 @@ describe("context service", () => {
           gid: TEAMSPACE_GID,
           name: "Platform",
           url: `https://app.asana.com/1/${WORKSPACE_GID}/dev/space/${TEAMSPACE_GID}`,
+          schema_validated: true,
         },
         {
           gid: "1600000000000002",
           name: "Mobile",
           url: `https://app.asana.com/1/${WORKSPACE_GID}/dev/space/1600000000000002`,
+          schema_validated: true,
         },
       ],
-      schema_validated: false,
       truncated: true,
     });
+  });
+
+  it("distinguishes candidates with and without a resolvable ticket custom type", async () => {
+    const validGid = TEAMSPACE_GID;
+    const invalidGid = "1600000000000002";
+    const observedProjectGids: Array<string | undefined> = [];
+    const typeahead: TypeaheadApi["typeaheadForWorkspaceWithHttpInfo"] = async () =>
+      collectionResult([
+        { gid: validGid, name: "Platform" },
+        { gid: invalidGid, name: "Ordinary project" },
+      ]);
+    const getCustomTypes: CustomTypesApi["getCustomTypesWithHttpInfo"] = async (opts) => {
+      observedProjectGids.push((opts as { project?: string } | undefined)?.project);
+      return customTypesFor(new Set([validGid]))(opts);
+    };
+    const service = createContextService(
+      createExecutor(createResourceBundle({ typeahead, getCustomTypes })),
+    );
+
+    const result = await service.findTeamspaces({
+      workspaceGid: WORKSPACE_GID,
+      limit: 2,
+      deadlineMs: DEADLINE_MS,
+    });
+
+    expect(observedProjectGids).toEqual([validGid, invalidGid]);
+    expect(result.candidates).toEqual([
+      expect.objectContaining({ gid: validGid, schema_validated: true }),
+      expect.objectContaining({ gid: invalidGid, schema_validated: false }),
+    ]);
   });
 
   it("omits an absent typeahead query and is not truncated below the requested limit", async () => {
@@ -219,7 +275,11 @@ describe("context service", () => {
       observedOptions = options ?? {};
       return collectionResult([{ gid: TEAMSPACE_GID, name: "Platform" }]);
     };
-    const service = createContextService(createExecutor(createResourceBundle({ typeahead })));
+    const service = createContextService(
+      createExecutor(
+        createResourceBundle({ typeahead, getCustomTypes: customTypesFor(new Set()) }),
+      ),
+    );
 
     const result = await service.findTeamspaces({
       workspaceGid: WORKSPACE_GID,
@@ -232,7 +292,7 @@ describe("context service", () => {
       opt_fields: "gid,name",
     });
     expect(observedOptions).not.toHaveProperty("query");
-    expect(result.schema_validated).toBe(false);
+    expect(result.candidates[0]?.schema_validated).toBe(false);
     expect(result.truncated).toBe(false);
   });
 

@@ -279,7 +279,7 @@ The descriptions below are the exact strings advertised through MCP tool discove
 | --- | --- | --- |
 | `get_context` | Read | Confirm one selected Teamspace at the start of an Asana workflow or when diagnosing schema warnings; do not call before every tool. |
 | `list_workspaces` | Read | List workspaces accessible to the configured Asana identity for Teamspace discovery or access diagnosis. |
-| `find_teamspaces` | Read | Find recent or query-matched Teamspace candidates in one workspace; candidates are not schema-validated. |
+| `find_teamspaces` | Read | Find recent or query-matched Teamspace candidates in one workspace; each candidate reports whether it has a resolvable Command ticket custom type. |
 | `get_teamspace_schema` | Read | Return the freshly discovered Command schema used for this tool call. |
 | `read_ticket` | Read | Read one Command ticket by Asana GID, Command short ID, or Asana task URL. |
 | `list_tickets` | Read | Enumerate tickets in the selected Teamspace with bounded type, label, assignee, Release, and completion-status filtering plus opaque pagination. Use search_tickets instead for completion-date ranges. |

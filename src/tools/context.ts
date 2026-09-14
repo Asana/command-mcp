@@ -14,7 +14,7 @@ import type {
 import { commandTeamspaceUrl } from "../asana_url.js";
 import { CommandError } from "../errors.js";
 import { collectPages } from "../pagination/scanner.js";
-import type { DiscoveryResult } from "../schema_discovery.js";
+import { type DiscoveryResult, hasResolvableTicketCustomType } from "../schema_discovery.js";
 import { TeamspaceReferenceSchema } from "../teamspace_identity.js";
 import { createGitHubUpdateChecker, type UpdateChecker } from "../update_check.js";
 
@@ -24,11 +24,15 @@ export const WorkspaceListSchema = z.object({
 
 const TeamspaceCandidateReferenceSchema = TeamspaceReferenceSchema.extend({
   url: z.string().url(),
+  schema_validated: z
+    .boolean()
+    .describe(
+      "Whether this candidate has a resolvable Command ticket custom type. False means a scoped tool call such as get_context will fail with schema_incompatible or schema_ambiguous. True increases confidence but does not guarantee every other schema field is valid.",
+    ),
 });
 
 export const TeamspaceCandidatesSchema = z.object({
   candidates: z.array(TeamspaceCandidateReferenceSchema),
-  schema_validated: z.literal(false),
   truncated: z.boolean(),
 });
 
@@ -128,13 +132,25 @@ async function findTeamspaces(
     trace,
   );
 
-  return {
-    candidates: page.items.map((candidate) => ({
+  // Checked sequentially, one Asana call per candidate, to keep concurrency bounded and stay
+  // within the caller's deadline rather than bursting up to `limit` (max 20) requests at once.
+  const candidates: TeamspaceCandidates["candidates"] = [];
+  for (const candidate of page.items) {
+    candidates.push({
       gid: candidate.gid,
       name: candidate.name,
       url: commandTeamspaceUrl(input.workspaceGid, candidate.gid),
-    })),
-    schema_validated: false,
+      schema_validated: await hasResolvableTicketCustomType(
+        executor,
+        candidate.gid,
+        options,
+        trace,
+      ),
+    });
+  }
+
+  return {
+    candidates,
     truncated: page.items.length === input.limit,
   };
 }
