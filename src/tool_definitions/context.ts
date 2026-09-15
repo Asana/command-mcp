@@ -49,7 +49,7 @@ const findTeamspaces = defineUnscopedTool({
   name: "find_teamspaces",
   title: "Find Command Teamspaces",
   description:
-    "Find recent or query-matched Teamspace candidates in one workspace; candidates are not schema-validated.",
+    "Find recent or query-matched Teamspace candidates in one workspace; each candidate reports whether it has a resolvable Command ticket custom type.",
   input: FindTeamspacesInputSchema,
   output: TeamspaceCandidatesSchema,
   readOnly: true,

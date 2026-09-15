@@ -97,7 +97,7 @@ describe("context tool definitions", () => {
         name: "find_teamspaces",
         title: "Find Command Teamspaces",
         description:
-          "Find recent or query-matched Teamspace candidates in one workspace; candidates are not schema-validated.",
+          "Find recent or query-matched Teamspace candidates in one workspace; each candidate reports whether it has a resolvable Command ticket custom type.",
       },
       {
         name: "get_teamspace_schema",
@@ -143,12 +143,23 @@ describe("context tool definitions", () => {
   it("requires a URL on every find_teamspaces candidate", () => {
     const output = findTool("find_teamspaces").outputSchema;
     const resultWithoutUrl = output.safeParse({
-      candidates: [{ gid: TEAMSPACE_ID, name: "Engineering Teamspace" }],
-      schema_validated: false,
+      candidates: [{ gid: TEAMSPACE_ID, name: "Engineering Teamspace", schema_validated: true }],
       truncated: false,
     });
 
     expect(resultWithoutUrl.success).toBe(false);
+  });
+
+  it("requires a schema_validated flag on every find_teamspaces candidate", () => {
+    const output = findTool("find_teamspaces").outputSchema;
+    const resultWithoutFlag = output.safeParse({
+      candidates: [
+        { gid: TEAMSPACE_ID, name: "Engineering Teamspace", url: "https://app.asana.com/x" },
+      ],
+      truncated: false,
+    });
+
+    expect(resultWithoutFlag.success).toBe(false);
   });
 
   it("lists workspaces without triggering schema discovery", async () => {
@@ -191,7 +202,6 @@ describe("context tool definitions", () => {
         observedInput = input;
         return {
           candidates: [],
-          schema_validated: false,
           truncated: false,
         };
       },
@@ -202,7 +212,6 @@ describe("context tool definitions", () => {
       tool.execute({ workspace_gid: WORKSPACE_GID }, callContext(createServices({ context }))),
     ).resolves.toEqual({
       candidates: [],
-      schema_validated: false,
       truncated: false,
     });
     expect(observedInput).toEqual({
@@ -219,7 +228,6 @@ describe("context tool definitions", () => {
         observedInput = input;
         return {
           candidates: [],
-          schema_validated: false,
           truncated: false,
         };
       },

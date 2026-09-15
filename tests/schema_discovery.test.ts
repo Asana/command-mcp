@@ -11,6 +11,7 @@ import {
   computeDiscoveryFingerprint,
   discoverTeamspaceSchema,
   type FieldDefinition,
+  hasResolvableTicketCustomType,
   readReferencedReleaseGids,
 } from "../src/schema_discovery.js";
 import { parseEnvelopeData } from "./helpers/tool_test_helpers.js";
@@ -280,6 +281,39 @@ function completeTeamspaceState(
 }
 
 const requestOptions: AsanaRequestOptions = { deadlineMs: deadlineAfter(10_000) };
+
+describe("hasResolvableTicketCustomType", () => {
+  it("returns true when exactly one ticket custom type resolves", async () => {
+    const executor = createFakeExecutor(completeTeamspaceState());
+
+    await expect(
+      hasResolvableTicketCustomType(executor, TEAMSPACE_ID, requestOptions, executor.createTrace()),
+    ).resolves.toBe(true);
+  });
+
+  it("returns false when no custom types are found", async () => {
+    const executor = createFakeExecutor(completeTeamspaceState({ customTypes: [] }));
+
+    await expect(
+      hasResolvableTicketCustomType(executor, TEAMSPACE_ID, requestOptions, executor.createTrace()),
+    ).resolves.toBe(false);
+  });
+
+  it("returns false when multiple ambiguous custom types are found", async () => {
+    const executor = createFakeExecutor(
+      completeTeamspaceState({
+        customTypes: [
+          { gid: "1800000000000001", name: "Alpha" },
+          { gid: "1800000000000002", name: "Beta" },
+        ],
+      }),
+    );
+
+    await expect(
+      hasResolvableTicketCustomType(executor, TEAMSPACE_ID, requestOptions, executor.createTrace()),
+    ).resolves.toBe(false);
+  });
+});
 
 describe("discoverTeamspaceSchema", () => {
   it("resolves every required field for a complete Teamspace", async () => {

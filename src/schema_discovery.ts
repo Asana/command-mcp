@@ -209,6 +209,24 @@ function resolveTicketCustomType(customTypes: CustomType[]): CustomType {
   schemaAmbiguous("Multiple ticket custom types found", customTypes);
 }
 
+export async function hasResolvableTicketCustomType(
+  executor: AsanaRequestExecutorPort,
+  teamspaceId: string,
+  options: AsanaRequestOptions,
+  trace: AsanaRequestTrace,
+): Promise<boolean> {
+  try {
+    const customTypes = await collectCustomTypes(executor, teamspaceId, options, trace);
+    resolveTicketCustomType(customTypes);
+    return true;
+  } catch (error) {
+    if (error instanceof CommandError) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 function fieldCandidate(field: CustomField): Candidate {
   return { gid: field.gid, name: field.name };
 }
