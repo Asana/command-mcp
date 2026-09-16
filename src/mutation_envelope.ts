@@ -67,17 +67,14 @@ function zodUnionFromSchemas(schemas: readonly z.ZodTypeAny[]): z.ZodTypeAny {
   return z.union([first, second, ...rest]);
 }
 
-type MutationVariantOutput<V> = V extends MutationVariant<
-  infer TStatus,
-  infer TOutcome,
-  infer TDataSchema
->
-  ? MutationMetadata & {
-      status: TStatus;
-      outcome: TOutcome;
-      data: z.infer<TDataSchema>;
-    }
-  : never;
+type MutationVariantOutput<V> =
+  V extends MutationVariant<infer TStatus, infer TOutcome, infer TDataSchema>
+    ? MutationMetadata & {
+        status: TStatus;
+        outcome: TOutcome;
+        data: z.infer<TDataSchema>;
+      }
+    : never;
 
 export function mutationVariantsToSchemas<
   const TVariants extends readonly MutationVariant<string, string, z.ZodTypeAny>[],
