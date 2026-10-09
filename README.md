@@ -1,5 +1,8 @@
 # Asana Command MCP
 
+> [!WARNING]
+> This project is deprecated. Use [Asana's Command MCP server](https://developers.asana.com/docs/using-asanas-command-mcp-server) instead.
+
 `@asana/command-mcp` is a local [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for working with Asana Command tickets from Claude Code, Claude Desktop, Codex, Cursor, or OpenCode.
 
 The server runs on your machine over stdio. By default, it authenticates with an Asana personal access token (PAT) stored in your operating system keychain. OAuth is also supported as a fallback.
